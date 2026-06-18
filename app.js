@@ -18,7 +18,7 @@ const MODALITY_DEFS = [
 ];
 
 const SHEET_CSV_URL =
-  "https://docs.google.com/spreadsheets/d/15B29MdEXNsDVq4fCJVUffznul--C1Mb5B7pZtmWqmOY/gviz/tq?tqx=out:csv&gid=1847097737";
+  "https://docs.google.com/spreadsheets/d/15B29MdEXNsDVq4fCJVUffznul--C1Mb5B7pZtmWqmOY/export?format=csv&gid=1847097737";
 const STORAGE_KEY = "dashboard-olympico-training-checks";
 const LOGIN_SESSION_KEY = "dashboard-olympico-authenticated";
 const LOGIN_USER = "olympico";
@@ -726,6 +726,44 @@ function buildStatus(entry) {
   };
 }
 
+function getNameParts(name) {
+  return normalizeSheetText(name).split(/\s+/).filter(Boolean);
+}
+
+function getFirstName(name) {
+  return getNameParts(name)[0] || normalizeSheetText(name);
+}
+
+function getAbbreviatedName(name, shouldUseSurnameInitial) {
+  const parts = getNameParts(name);
+  const firstName = parts[0] || normalizeSheetText(name);
+  const surnameInitial = parts.find((part, index) => index > 0 && /[A-Za-zÀ-ÿ]/.test(part))?.[0];
+
+  if (shouldUseSurnameInitial && surnameInitial) {
+    return `${firstName} ${surnameInitial.toUpperCase()}.`;
+  }
+
+  return firstName;
+}
+
+function applyDisplayNames(athletes) {
+  const firstNameCounts = athletes.reduce((counts, athlete) => {
+    const key = normalizeSheetKey(getFirstName(athlete.fullName));
+    counts.set(key, (counts.get(key) || 0) + 1);
+    return counts;
+  }, new Map());
+
+  return athletes.map((athlete) => {
+    const firstNameKey = normalizeSheetKey(getFirstName(athlete.fullName));
+    const hasRepeatedFirstName = (firstNameCounts.get(firstNameKey) || 0) > 1;
+
+    return {
+      ...athlete,
+      name: getAbbreviatedName(athlete.fullName, hasRepeatedFirstName),
+    };
+  });
+}
+
 function transformSheetRows(rows) {
   if (!rows.length) {
     return {
@@ -798,7 +836,7 @@ function transformSheetRows(rows) {
     groups.get(key).entries.push(entry);
   }
 
-  const athletes = Array.from(groups.values())
+  const athletes = applyDisplayNames(Array.from(groups.values())
     .map((group) => {
       group.entries.sort((left, right) => {
         const leftTime = left.timestampIso ? Date.parse(left.timestampIso) : 0;
@@ -810,6 +848,7 @@ function transformSheetRows(rows) {
       const status = buildStatus(latest);
       return {
         id: group.key,
+        fullName: group.name,
         name: group.name,
         category: group.category,
         totalEntries: group.entries.length,
@@ -822,7 +861,7 @@ function transformSheetRows(rows) {
         recentHistory: group.entries.slice(0, 5),
       };
     })
-    .sort((left, right) => left.name.localeCompare(right.name, "pt-BR"));
+    .sort((left, right) => left.fullName.localeCompare(right.fullName, "pt-BR")));
 
   const categories = Array.from(new Set(athletes.map((athlete) => athlete.category).filter(Boolean)))
     .sort((left, right) => left.localeCompare(right, "pt-BR"));
@@ -1163,6 +1202,7 @@ function filterAthletes() {
     const matchesSearch =
       !search ||
       athlete.name.toLowerCase().includes(search) ||
+      athlete.fullName.toLowerCase().includes(search) ||
       athlete.category.toLowerCase().includes(search);
     const matchesTeam = !state.filters.category || athlete.category === state.filters.category;
     return matchesSearch && matchesTeam;
@@ -2387,7 +2427,7 @@ function getTrainingDatesForTeam(teamName) {
       if (!dateMap.has(dateLabel)) {
         dateMap.set(dateLabel, new Set());
       }
-      dateMap.get(dateLabel).add(athlete.name);
+      dateMap.get(dateLabel).add(athlete.id);
     });
   });
 
@@ -2396,8 +2436,8 @@ function getTrainingDatesForTeam(teamName) {
       const [ld = "01", lm = "01", ly = "2000"] = dateLabel.split("/");
       const dateObject = new Date(`${ly}-${lm}-${ld}T12:00:00`);
       const missing = athletes
+        .filter((athlete) => !responders.has(athlete.id))
         .map((athlete) => athlete.name)
-        .filter((name) => !responders.has(name))
         .sort((left, right) => left.localeCompare(right, "pt-BR"));
 
       return {

@@ -1,7 +1,11 @@
 # Dashboard Olympico
 
 Versao estatica do Dashboard Olympico pronta para GitHub Pages.
-`
+
+## Login
+
+- Usuario: `olympico`
+- Senha: `olympico80`
 
 ## Como publicar no GitHub Pages
 
