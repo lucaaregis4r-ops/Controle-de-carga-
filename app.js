@@ -19,6 +19,7 @@ const MODALITY_DEFS = [
 
 const SHEET_CSV_URL =
   "https://docs.google.com/spreadsheets/d/15B29MdEXNsDVq4fCJVUffznul--C1Mb5B7pZtmWqmOY/export?format=csv&gid=1847097737";
+const ACTIVE_ATHLETE_WINDOW_DAYS = 30;
 const STORAGE_KEY = "dashboard-olympico-training-checks";
 const LOGIN_SESSION_KEY = "dashboard-olympico-authenticated";
 const LOGIN_USER = "olympico";
@@ -772,7 +773,9 @@ function transformSheetRows(rows) {
       totalRows: 0,
       athletes: [],
       categories: [],
-      summary: { totalAthletes: 0, critical: 0, warning: 0, stable: 0 },
+      summary: { totalAthletes: 0, inactiveAthletes: 0, critical: 0, warning: 0, stable: 0 },
+      inactiveAthletes: 0,
+      activeAthleteWindowDays: ACTIVE_ATHLETE_WINDOW_DAYS,
     };
   }
 
@@ -836,7 +839,11 @@ function transformSheetRows(rows) {
     groups.get(key).entries.push(entry);
   }
 
-  const athletes = applyDisplayNames(Array.from(groups.values())
+  const activeThreshold = updatedAt
+    ? updatedAt.getTime() - ACTIVE_ATHLETE_WINDOW_DAYS * 24 * 60 * 60 * 1000
+    : null;
+
+  const allAthletes = applyDisplayNames(Array.from(groups.values())
     .map((group) => {
       group.entries.sort((left, right) => {
         const leftTime = left.timestampIso ? Date.parse(left.timestampIso) : 0;
@@ -846,11 +853,17 @@ function transformSheetRows(rows) {
 
       const latest = group.entries[0];
       const status = buildStatus(latest);
+      const latestTimestamp = latest.timestampIso ? Date.parse(latest.timestampIso) : null;
+      const isActive =
+        !Number.isFinite(activeThreshold) ||
+        (Number.isFinite(latestTimestamp) && latestTimestamp >= activeThreshold);
+
       return {
         id: group.key,
         fullName: group.name,
         name: group.name,
         category: group.category,
+        isActive,
         totalEntries: group.entries.length,
         lastCheckIn: latest.timestampDisplay,
         reportedDate: latest.reportedDate,
@@ -863,6 +876,8 @@ function transformSheetRows(rows) {
     })
     .sort((left, right) => left.fullName.localeCompare(right.fullName, "pt-BR")));
 
+  const athletes = allAthletes.filter((athlete) => athlete.isActive);
+  const inactiveAthletes = allAthletes.length - athletes.length;
   const categories = Array.from(new Set(athletes.map((athlete) => athlete.category).filter(Boolean)))
     .sort((left, right) => left.localeCompare(right, "pt-BR"));
   const summary = athletes.reduce(
@@ -871,7 +886,7 @@ function transformSheetRows(rows) {
       accumulator[athlete.status.id] += 1;
       return accumulator;
     },
-    { totalAthletes: 0, critical: 0, warning: 0, stable: 0 }
+    { totalAthletes: 0, inactiveAthletes, critical: 0, warning: 0, stable: 0 }
   );
 
   return {
@@ -881,6 +896,8 @@ function transformSheetRows(rows) {
     athletes,
     categories,
     summary,
+    inactiveAthletes,
+    activeAthleteWindowDays: ACTIVE_ATHLETE_WINDOW_DAYS,
   };
 }
 
