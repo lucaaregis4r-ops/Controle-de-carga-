@@ -1,0 +1,15 @@
+node_modules/
+dist/
+ENTREGAR-DASHBOARD-OLYMPICO/
+GITHUB-DASHBOARD-OLYMPICO/
+output/
+archive/legacy-snapshots/
+/Relatório dia 18 Junho/
+/Relatórios 18 de junho/
+*.log
+_server_out.log
+_server_err.log
+
+dist-linux/
+.env
+.env.*

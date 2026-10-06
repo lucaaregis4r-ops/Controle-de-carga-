@@ -22,7 +22,6 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-
     steps:
       - name: Baixar o projeto
         uses: actions/checkout@v4
@@ -39,7 +38,7 @@ jobs:
       - name: Executar testes
         run: npm test
 
-      - name: Gerar edicao estatica
+      - name: Gerar edicao estatica sincronizada
         run: npm run build:pages
 
       - name: Validar edicao estatica
@@ -48,7 +47,7 @@ jobs:
       - name: Configurar GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Preparar publicacao
+      - name: Preparar artefato
         uses: actions/upload-pages-artifact@v3
         with:
           path: output/github-pages

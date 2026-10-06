@@ -8,6 +8,11 @@ const { execFile } = require("child_process");
 const { randomUUID } = require("crypto");
 const { URL, pathToFileURL } = require("url");
 const paths = require("./config/paths");
+const { listAttendanceTeams } = require("./config/data-sources");
+const { getAttendanceData } = require("./integrations/attendance");
+const { getWellnessRows } = require("./integrations/wellness");
+const { applyAttendanceActivity } = require("./domain/attendance-reconciliation");
+const Analysis = require("../client/analysis");
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
@@ -15,20 +20,15 @@ const ROOT = paths.projectRoot;
 const CLIENT_DIR = paths.clientDir;
 const ASSETS_DIR = paths.assetsDir;
 const DOCS_DIR = paths.docsDir;
-const SHEET_CSV_URL =
-  "https://docs.google.com/spreadsheets/d/15B29MdEXNsDVq4fCJVUffznul--C1Mb5B7pZtmWqmOY/export?format=csv&gid=1847097737";
 const PHYSIO_DEMANDS_SHEET_ID = "1RzfD3RM0PEBXCPZdthVeIWu7G0mYIENlsP1_ToV6Xzs";
 const PSYCHOLOGY_DEMANDS_CSV_URL =
   "https://docs.google.com/spreadsheets/d/1ZUFyKxUvvxZ41sVGIwr3ophT39SSKjrXDdlnq_S2vI0/export?format=csv&gid=1746478381";
-const ACTIVE_ATHLETE_WINDOW_DAYS = 30;
-const REPORT_KIT_ITEMS = [
-  { modalityId: "basquete", teamName: "BASQUETE SUB14", fileName: "Relatório BASQUETE SUB14.pdf" },
-  { modalityId: "basquete", teamName: "BASQUETE SUB 15", fileName: "Relatório BASQUETE SUB 15.pdf" },
-  { modalityId: "basquete", teamName: "BASQUETE SUB16", fileName: "Relatório BASQUETE SUB16.pdf" },
-  { modalityId: "basquete", teamName: "BASQUETE SUB17", fileName: "Relatório BASQUETE SUB17.pdf" },
-  { modalityId: "natacao", teamName: "", fileName: "Relatório Natação.pdf" },
-  { modalityId: "futsal", teamName: "", fileName: "Relatório Futsal.pdf" },
-];
+const ACTIVE_ATHLETE_WINDOW_DAYS = Analysis.ANALYSIS_CONFIG.activityWindowDays;
+const REPORT_KIT_ITEMS = listAttendanceTeams().map(({ modalityId, teamName }) => ({
+  modalityId,
+  teamName,
+  fileName: `Relatório ${teamName}.pdf`,
+}));
 const MONTHS_PT = [
   "janeiro",
   "fevereiro",
@@ -70,6 +70,12 @@ const BROWSER_CANDIDATES = [
   "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
   "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
   "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+  "/usr/bin/chromium",
+  "/usr/bin/chromium-browser",
+  "/usr/bin/google-chrome",
+  "/usr/bin/google-chrome-stable",
+  "/usr/bin/microsoft-edge",
+  "/usr/bin/microsoft-edge-stable",
 ].filter(Boolean);
 
 function getLocalNetworkUrls(port) {
@@ -87,7 +93,9 @@ function openUrlInDefaultBrowser(url) {
         ? ["open", [url]]
         : ["xdg-open", [url]];
 
-  execFile(command[0], command[1], { windowsHide: true }, () => {});
+  execFile(command[0], command[1], { windowsHide: true }, (error) => {
+    if (error) console.warn(`Nao foi possivel abrir o navegador automaticamente. Abra ${url}`);
+  });
 }
 
 function shouldOpenBrowser() {
@@ -301,10 +309,10 @@ function buildStatus(entry) {
   const painLevel = entry.painLevel ?? 0;
   const concernScores = [
     entry.fatigueScore,
-    Number.isFinite(entry.sleepScore) ? 6 - entry.sleepScore : null,
+    entry.sleepScore,
     entry.muscleScore,
     entry.stressScore,
-    Number.isFinite(entry.moodScore) ? 6 - entry.moodScore : null,
+    entry.moodScore,
   ];
   const wellbeingAverage = average(concernScores);
   const highStrain = concernScores.some((score) => score >= 5);
@@ -315,7 +323,7 @@ function buildStatus(entry) {
       id: "critical",
       label: "Atenção",
       tone: "critical",
-      summary: "Dor alta ou sinais relevantes no ultimo check-in.",
+      summary: "Dor alta ou sinais relevantes no último check-in.",
       wellbeingAverage,
     };
   }
@@ -325,7 +333,7 @@ function buildStatus(entry) {
       id: "warning",
       label: "Observação",
       tone: "warning",
-      summary: "Vale acompanhar a recuperacao e o bem-estar.",
+      summary: "Sinais moderados no último check-in.",
       wellbeingAverage,
     };
   }
@@ -334,7 +342,7 @@ function buildStatus(entry) {
     id: "stable",
     label: "Ok",
     tone: "stable",
-    summary: "Ultimo registro sem sinais aparentes de alerta.",
+    summary: "Último registro sem sinais absolutos de atenção.",
     wellbeingAverage,
   };
 }
@@ -343,26 +351,17 @@ function computeLoadScore(entry) {
   const values = [
     Number.isFinite(entry.painLevel) ? entry.painLevel / 2 : null,
     entry.fatigueScore,
-    Number.isFinite(entry.sleepScore) ? 6 - entry.sleepScore : null,
+    entry.sleepScore,
     entry.muscleScore,
     entry.stressScore,
-    Number.isFinite(entry.moodScore) ? 6 - entry.moodScore : null,
+    entry.moodScore,
   ];
 
   return roundNumber(average(values));
 }
 
 function computeRecoveryScore(entry) {
-  const values = [
-    Number.isFinite(entry.fatigueScore) ? 6 - entry.fatigueScore : null,
-    Number.isFinite(entry.stressScore) ? 6 - entry.stressScore : null,
-    Number.isFinite(entry.muscleScore) ? 6 - entry.muscleScore : null,
-    Number.isFinite(entry.sleepScore) ? 6 - entry.sleepScore : null,
-    Number.isFinite(entry.moodScore) ? entry.moodScore : null,
-    Number.isFinite(entry.painLevel) ? 6 - Math.min(5, entry.painLevel / 2) : null,
-  ];
-
-  return roundNumber(average(values));
+  return Analysis.computeRecoveryScore(entry);
 }
 
 function formatDate(date) {
@@ -430,7 +429,7 @@ function quantile(values, ratio) {
   return validValues[lowerIndex] * (1 - weight) + validValues[upperIndex] * weight;
 }
 
-function transformRows(rows) {
+function transformRows(rows, { attendanceData = null } = {}) {
   if (!rows.length) {
     return {
       updatedAt: null,
@@ -440,11 +439,13 @@ function transformRows(rows) {
       summary: {
         totalAthletes: 0,
         inactiveAthletes: 0,
+        unverifiedAthletes: 0,
         critical: 0,
         warning: 0,
         stable: 0,
       },
       inactiveAthletes: 0,
+      unverifiedAthletes: 0,
       activeAthleteWindowDays: ACTIVE_ATHLETE_WINDOW_DAYS,
     };
   }
@@ -516,11 +517,7 @@ function transformRows(rows) {
     groups.get(key).entries.push(entry);
   }
 
-  const activeThreshold = updatedAt
-    ? updatedAt.getTime() - ACTIVE_ATHLETE_WINDOW_DAYS * 24 * 60 * 60 * 1000
-    : null;
-
-  const allAthletes = Array.from(groups.values())
+  const primaryAthletes = Array.from(groups.values())
     .map((group) => {
       group.entries.sort((left, right) => {
         const leftTime = left.timestampIso ? Date.parse(left.timestampIso) : 0;
@@ -530,16 +527,11 @@ function transformRows(rows) {
 
       const latest = group.entries[0];
       const status = buildStatus(latest);
-      const latestTimestamp = latest.timestampIso ? Date.parse(latest.timestampIso) : null;
-      const isActive =
-        !Number.isFinite(activeThreshold) ||
-        (Number.isFinite(latestTimestamp) && latestTimestamp >= activeThreshold);
-
       return {
         id: group.key,
         name: group.name,
         category: group.category,
-        isActive,
+        isActive: true,
         totalEntries: group.entries.length,
         lastCheckIn: latest.timestampDisplay,
         reportedDate: latest.reportedDate,
@@ -552,8 +544,17 @@ function transformRows(rows) {
     })
     .sort((left, right) => left.name.localeCompare(right.name, "pt-BR"));
 
-  const athletes = allAthletes.filter((athlete) => athlete.isActive);
-  const inactiveAthletes = allAthletes.length - athletes.length;
+  const attendanceActivity = applyAttendanceActivity(
+    primaryAthletes,
+    attendanceData,
+    updatedAt,
+    ACTIVE_ATHLETE_WINDOW_DAYS
+  );
+  const allAthletes = attendanceActivity.athletes;
+
+  const athletes = allAthletes;
+  const inactiveAthletes = athletes.filter((athlete) => !athlete.isActive).length;
+  const unverifiedAthletes = athletes.filter((athlete) => athlete.activityStatus === "unverified").length;
 
   const categories = Array.from(
     new Set(athletes.map((athlete) => athlete.category).filter(Boolean))
@@ -568,6 +569,7 @@ function transformRows(rows) {
     {
       totalAthletes: 0,
       inactiveAthletes,
+      unverifiedAthletes,
       critical: 0,
       warning: 0,
       stable: 0,
@@ -582,13 +584,48 @@ function transformRows(rows) {
     categories,
     summary,
     inactiveAthletes,
+    unverifiedAthletes,
     activeAthleteWindowDays: ACTIVE_ATHLETE_WINDOW_DAYS,
+    attendance: {
+      fetchedAt: attendanceData?.fetchedAt || null,
+      sourceStatus: attendanceData?.teams?.length
+        ? attendanceData.errors.length
+          ? "degraded"
+          : "available"
+        : "unavailable",
+      loadedTeams: attendanceData?.teams?.length || 0,
+      failedTeams: attendanceData?.errors?.length || 0,
+      errors: attendanceData?.errors || [],
+      ...attendanceActivity.reconciliation,
+    },
   };
 }
 
+function extractPrimaryAthleteRoster(rows) {
+  if (!rows.length) return [];
+  const header = rows[0].map((value) => normalizeText(value));
+  const painAreaIndex = header.findIndex((value) => value.includes("DOR MUSCULAR"));
+  const nameStartIndex = 3;
+  const nameEndIndex = painAreaIndex > nameStartIndex ? painAreaIndex - 1 : 18;
+  const athletes = new Map();
+
+  for (const rawRow of rows.slice(1)) {
+    const row = header.map((_, index) => rawRow[index] || "");
+    const category = normalizeTeamName(row[1]);
+    const name = pickFirstFilled(row.slice(nameStartIndex, nameEndIndex + 1));
+    if (!name || !category) continue;
+    const key = `${normalizeKey(name)}|${normalizeKey(category)}`;
+    if (!athletes.has(key)) athletes.set(key, { name, category });
+  }
+
+  return [...athletes.values()].sort(
+    (left, right) => left.category.localeCompare(right.category, "pt-BR") || left.name.localeCompare(right.name, "pt-BR")
+  );
+}
+
 async function fetchAthletesData() {
-  const csv = await downloadText(SHEET_CSV_URL);
-  return transformRows(parseCsv(csv));
+  const [wellnessRows, attendanceData] = await Promise.all([getWellnessRows(), getAttendanceData()]);
+  return transformRows(wellnessRows, { attendanceData });
 }
 
 function normalizeHeaderKey(value) {
@@ -982,6 +1019,64 @@ async function handlePhysiotherapyApi(requestUrl, response) {
   );
 }
 
+function buildAttendanceSummary(items) {
+  return items.reduce(
+    (summary, item) => {
+      summary.athletes += 1;
+      if (["approved", "exact", "alias"].includes(item.matchStatus)) summary.matched += 1;
+      else summary.review += 1;
+      if (Number.isFinite(item.weeklyPercentage)) {
+        summary.weeklyPresent += item.weeklyPresent;
+        summary.weeklyPossible += item.weeklySessions;
+      }
+      return summary;
+    },
+    { athletes: 0, matched: 0, review: 0, weeklyPresent: 0, weeklyPossible: 0 }
+  );
+}
+
+async function handleAttendanceApi(requestUrl, response) {
+  const modalityId = normalizeText(requestUrl.searchParams.get("modality"));
+  const teamName = normalizeText(requestUrl.searchParams.get("team"));
+  const matchStatus = normalizeText(requestUrl.searchParams.get("match"));
+  const payload = await fetchAthletesData();
+  const attendance = payload.attendance || {};
+  const items = (attendance.roster || []).filter((item) => {
+    if (modalityId && item.modalityId !== modalityId) return false;
+    if (teamName && normalizeTeamLookupKey(item.teamName) !== normalizeTeamLookupKey(teamName)) return false;
+    return !matchStatus || item.matchStatus === matchStatus;
+  });
+  const teams = Array.from(new Set((attendance.roster || []).map((item) => item.teamName).filter(Boolean))).sort(
+    (left, right) => left.localeCompare(right, "pt-BR")
+  );
+  const summary = buildAttendanceSummary(items);
+
+  response.writeHead(200, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+  });
+  response.end(
+    JSON.stringify({
+      updatedAt: attendance.lastSessionDate || attendance.fetchedAt,
+      sourceStatus: attendance.sourceStatus || "unavailable",
+      loadedTeams: attendance.loadedTeams || 0,
+      failedTeams: attendance.failedTeams || 0,
+      errors: attendance.errors || [],
+      referenceDate: attendance.referenceDate || payload.updatedAt?.slice(0, 10) || null,
+      activeWindowDays: payload.activeAthleteWindowDays,
+      modalities: MODALITY_DEFS.map(({ id, label }) => ({ id, label })),
+      teams,
+      summary: {
+        ...summary,
+        weeklyPercentage: summary.weeklyPossible
+          ? Math.round((summary.weeklyPresent / summary.weeklyPossible) * 1000) / 10
+          : null,
+      },
+      items,
+    })
+  );
+}
+
 async function fetchPsychologyDemandsData() {
   try {
     const csv = await downloadText(PSYCHOLOGY_DEMANDS_CSV_URL);
@@ -1063,7 +1158,7 @@ function enrichAthletes(athletes) {
 
 function getMetricByKey(metricKey) {
   const metrics = {
-    loadScore: { label: "Carga", max: 5 },
+    loadScore: { label: "Desgaste percebido", max: 5 },
     recoveryScore: { label: "Recuperação", max: 5 },
     painLevel: { label: "Dor", max: 10 },
     fatigueScore: { label: "Fadiga", max: 5 },
@@ -1188,23 +1283,10 @@ function getReportFileSafeTeamName(teamName) {
 }
 
 function buildWeeklyReportKitItems(categories) {
-  const items = REPORT_KIT_ITEMS.map((item) => ({
+  return REPORT_KIT_ITEMS.map((item) => ({
     ...item,
-    teamName: item.teamName ? resolveReportTeam(categories, item.teamName) : "",
+    teamName: resolveReportTeam(categories, item.teamName),
   }));
-
-  categories
-    .filter((teamName) => ["volei-feminino", "volei-masculino"].includes(inferModalityId(teamName)))
-    .sort((left, right) => left.localeCompare(right, "pt-BR"))
-    .forEach((teamName) => {
-      items.push({
-        modalityId: inferModalityId(teamName),
-        teamName,
-        fileName: `Relatório ${getReportFileSafeTeamName(teamName)}.pdf`,
-      });
-    });
-
-  return items;
 }
 
 function filterEntriesByDays(entries, updatedAtIso, days) {
@@ -1213,7 +1295,8 @@ function filterEntriesByDays(entries, updatedAtIso, days) {
   }
 
   const latestTimestamp = updatedAtIso ? Date.parse(updatedAtIso) : Date.now();
-  const threshold = latestTimestamp - days * 24 * 60 * 60 * 1000;
+  const anchor = new Date(latestTimestamp);
+  const threshold = Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate() - days + 1);
   return entries.filter((entry) => {
     const timestamp = entry.timestampIso ? Date.parse(entry.timestampIso) : null;
     return Number.isFinite(timestamp) && timestamp >= threshold;
@@ -1233,19 +1316,13 @@ function aggregateAthlete(athlete, metricKey, updatedAtIso, days) {
 }
 
 function getTeamDistribution(athletes, teamName, metricKey, updatedAtIso, days) {
-  return getAthletesByTeam(athletes, teamName)
+  return Analysis.getAnalysisEligibleAthletes(getAthletesByTeam(athletes, teamName), updatedAtIso, { days: days || Analysis.ANALYSIS_CONFIG.activityWindowDays })
     .map((athlete) => aggregateAthlete(athlete, metricKey, updatedAtIso, days))
     .filter((value) => Number.isFinite(value));
 }
 
 function getTeamAggregate(athletes, teamName, metricKey, updatedAtIso, days) {
   return average(getTeamDistribution(athletes, teamName, metricKey, updatedAtIso, days));
-}
-
-function getAllTeamsAggregate(athletes, categories, metricKey, updatedAtIso, days) {
-  return categories
-    .map((category) => getTeamAggregate(athletes, category, metricKey, updatedAtIso, days))
-    .filter((value) => Number.isFinite(value));
 }
 
 function buildRollingWindowValues(entries, metricKey, windowSize = 3) {
@@ -1301,21 +1378,8 @@ function classifyPercentileBand(percentileValue) {
   return "Muito baixa";
 }
 
-function getBaselineTone(percentileValue) {
-  if (!Number.isFinite(percentileValue)) {
-    return "neutral";
-  }
-  if (percentileValue >= 85) {
-    return "strong";
-  }
-  if (percentileValue >= 65) {
-    return "alert";
-  }
-  return "neutral";
-}
-
-function buildTeamLoadBaseline(athletes, categories, teamName) {
-  const teamAthletes = getAthletesByTeam(athletes, teamName);
+function buildTeamLoadBaseline(athletes, categories, teamName, updatedAtIso) {
+  const teamAthletes = Analysis.getAnalysisEligibleAthletes(getAthletesByTeam(athletes, teamName), updatedAtIso, { days: Analysis.ANALYSIS_CONFIG.reportWeekDays });
   const currentMovingAverages = teamAthletes
     .map((athlete) => getCurrentMovingAverage(athlete.entries, "loadScore", 3))
     .filter((value) => Number.isFinite(value));
@@ -1344,21 +1408,23 @@ function buildTeamLoadBaseline(athletes, categories, teamName) {
     .filter((value) => Number.isFinite(value));
 
   const teamBaselineSeries = buildRollingWindowValues(
-    teamAggregatedSeries.map((value) => ({ loadScore: value })),
+    teamAggregatedSeries.slice().reverse().map((value) => ({ loadScore: value })),
     "loadScore",
     3
   );
 
   const clubCurrentTeamAverages = categories
     .map((category) => {
-      const values = getAthletesByTeam(athletes, category)
+      const values = Analysis.getAnalysisEligibleAthletes(getAthletesByTeam(athletes, category), updatedAtIso, { days: Analysis.ANALYSIS_CONFIG.reportWeekDays })
         .map((athlete) => getCurrentMovingAverage(athlete.entries, "loadScore", 3))
         .filter((value) => Number.isFinite(value));
       return roundNumber(average(values), 2);
     })
     .filter((value) => Number.isFinite(value));
 
-  const teamHistoryPercentile = percentile(teamBaselineSeries, currentTeamAverage);
+  const historicalWindows = teamBaselineSeries.slice(0, -1);
+  const teamHistoryPercentile = historicalWindows.length >= Analysis.ANALYSIS_CONFIG.minPersonalBaselineWindows
+    ? percentile(historicalWindows, currentTeamAverage) : null;
   const clubPercentile = percentile(clubCurrentTeamAverages, currentTeamAverage);
 
   return {
@@ -1367,7 +1433,7 @@ function buildTeamLoadBaseline(athletes, categories, teamName) {
     teamHistoryBand: classifyPercentileBand(teamHistoryPercentile),
     clubPercentile,
     clubBand: classifyPercentileBand(clubPercentile),
-    baselineCount: teamBaselineSeries.length,
+    baselineCount: historicalWindows.length,
   };
 }
 
@@ -1398,7 +1464,7 @@ function buildTrendSeries(athletes, teamName, updatedAtIso) {
   const grouped = new Map();
   const endDate = updatedAtIso ? new Date(updatedAtIso) : new Date();
   const endTime = endDate instanceof Date && !Number.isNaN(endDate.getTime()) ? endDate.getTime() : Date.now();
-  const startTime = endTime - 90 * 24 * 60 * 60 * 1000;
+  const startTime = endTime - Analysis.ANALYSIS_CONFIG.trendDays * 24 * 60 * 60 * 1000;
 
   getAthletesByTeam(athletes, teamName).forEach((athlete) => {
     athlete.entries.forEach((entry) => {
@@ -1424,35 +1490,6 @@ function buildTrendSeries(athletes, teamName, updatedAtIso) {
       recoveryScore: aggregateEntries(item.entries, "recoveryScore"),
       stressScore: aggregateEntries(item.entries, "stressScore"),
     }));
-}
-
-function buildProfileSeries(athletes, categories, teamName, updatedAtIso) {
-  const metricKeys = ["loadScore", "recoveryScore", "fatigueScore", "sleepScore", "stressScore"];
-  return metricKeys.map((metricKey) => ({
-    key: metricKey,
-    label: getMetricByKey(metricKey).label,
-    team: roundNumber(getTeamAggregate(athletes, teamName, metricKey, updatedAtIso, 90), 1),
-    club: roundNumber(average(getAllTeamsAggregate(athletes, categories, metricKey, updatedAtIso, 90)), 1),
-    max: getMetricByKey(metricKey).max,
-  }));
-}
-
-function buildPercentileSeries(athletes, categories, teamName, updatedAtIso) {
-  const metricKeys = ["loadScore", "recoveryScore", "painLevel", "stressScore"];
-  return metricKeys.map((metricKey) => {
-    const teamValue = getTeamAggregate(athletes, teamName, metricKey, updatedAtIso, 30);
-    const percentValue = percentile(
-      getAllTeamsAggregate(athletes, categories, metricKey, updatedAtIso, 30),
-      teamValue
-    );
-
-    return {
-      key: metricKey,
-      label: getMetricByKey(metricKey).label,
-      percentile: percentValue,
-      value: roundNumber(teamValue, 1),
-    };
-  });
 }
 
 function polylinePoints(values, width, height, maxValue) {
@@ -1481,7 +1518,7 @@ function buildLineChartSvg(series) {
   const innerWidth = width - padLeft - padRight;
   const innerHeight = height - padTop - padBottom;
   const lines = [
-    { key: "loadScore", color: "#f3374a", label: "Carga" },
+    { key: "loadScore", color: "#315ea8", label: "Desgaste percebido" },
     { key: "recoveryScore", color: "#29c989", label: "Recuperação" },
     { key: "stressScore", color: "#7a89ff", label: "Estresse" },
   ];
@@ -1555,278 +1592,28 @@ function buildLineChartSvg(series) {
   `;
 }
 
-function buildProfileBarsSvg(series) {
-  const width = 760;
-  const barHeight = 18;
-  const gap = 28;
-  const height = 56 + series.length * gap;
-  const labelX = 24;
-  const trackX = 180;
-  const trackWidth = 520;
-
-  const rows = series
-    .map((item, index) => {
-      const top = 34 + index * gap;
-      const teamWidth = Number.isFinite(item.team) ? (item.team / item.max) * trackWidth : 0;
-      const clubWidth = Number.isFinite(item.club) ? (item.club / item.max) * trackWidth : 0;
-
-      return `
-        <text x="${labelX}" y="${top + 14}" class="axis-label">${escapeHtml(item.label)}</text>
-        <rect x="${trackX}" y="${top}" width="${trackWidth}" height="${barHeight}" rx="9" fill="#edf1fb"></rect>
-        <rect x="${trackX}" y="${top}" width="${clubWidth}" height="${barHeight}" rx="9" fill="#8393ff"></rect>
-        <rect x="${trackX}" y="${top}" width="${teamWidth}" height="${barHeight}" rx="9" fill="#f3374a"></rect>
-        <text x="${trackX + trackWidth + 10}" y="${top + 14}" class="axis-label">${escapeHtml(formatRatio(item.team, item.max))}</text>
-      `;
-    })
-    .join("");
-
-  return `
-    <svg viewBox="0 0 ${width} ${height}" class="report-svg" aria-label="Perfil da equipe">
-      <rect width="${width}" height="${height}" rx="24" fill="#ffffff"></rect>
-      <g transform="translate(${trackX}, 18)">
-        <rect width="16" height="6" rx="3" fill="#f3374a"></rect>
-        <text x="24" y="6" class="legend-label">Equipe</text>
-        <rect x="94" width="16" height="6" rx="3" fill="#8393ff"></rect>
-        <text x="118" y="6" class="legend-label">Clube</text>
-      </g>
-      ${rows}
-    </svg>
-  `;
-}
-
-function buildPercentileSvg(series) {
-  const width = 760;
-  const barHeight = 18;
-  const gap = 32;
-  const height = 64 + series.length * gap;
-  const labelX = 24;
-  const trackX = 220;
-  const trackWidth = 470;
-
-  const ticks = [0, 25, 50, 75, 100]
-    .map((value) => {
-      const x = trackX + (value / 100) * trackWidth;
-      return `
-        <line x1="${x}" y1="20" x2="${x}" y2="${height - 20}" class="grid-line"></line>
-        <text x="${x}" y="16" class="axis-label" text-anchor="middle">${value}</text>
-      `;
-    })
-    .join("");
-
-  const rows = series
-    .map((item, index) => {
-      const top = 36 + index * gap;
-      const widthValue = Number.isFinite(item.percentile) ? (item.percentile / 100) * trackWidth : 0;
-
-      return `
-        <text x="${labelX}" y="${top + 14}" class="axis-label">${escapeHtml(item.label)}</text>
-        <rect x="${trackX}" y="${top}" width="${trackWidth}" height="${barHeight}" rx="9" fill="#edf1fb"></rect>
-        <rect x="${trackX}" y="${top}" width="${widthValue}" height="${barHeight}" rx="9" fill="#16255f"></rect>
-        <circle cx="${trackX + widthValue}" cy="${top + barHeight / 2}" r="6" fill="#f3374a"></circle>
-        <text x="${trackX + trackWidth + 10}" y="${top + 14}" class="axis-label">${Number.isFinite(item.percentile) ? `${item.percentile}%` : "Sem base"}</text>
-      `;
-    })
-    .join("");
-
-  return `
-    <svg viewBox="0 0 ${width} ${height}" class="report-svg" aria-label="Percentis da equipe">
-      <rect width="${width}" height="${height}" rx="24" fill="#ffffff"></rect>
-      ${ticks}
-      ${rows}
-    </svg>
-  `;
-}
-
-function buildBaselinePanelHtml(teamName, baseline, teamSummary, recoveryMean, stressMean, teamAthletes) {
-  const summaryRows = [
-    {
-      label: "Carga MM3 atual",
-      value: formatRatio(baseline.currentTeamAverage),
-      note: `${baseline.teamHistoryBand} na própria história`,
-      tone: getBaselineTone(baseline.teamHistoryPercentile),
-    },
-    {
-      label: "Percentil histórico",
-      value: Number.isFinite(baseline.teamHistoryPercentile) ? `${baseline.teamHistoryPercentile}%` : "Sem base",
-      note: `${baseline.baselineCount} janelas móveis de 3 checks`,
-      tone: getBaselineTone(baseline.teamHistoryPercentile),
-    },
-    {
-      label: "Faixa central",
-      value: `${formatRatio(teamSummary.p25)} a ${formatRatio(teamSummary.p75)}`,
-      note: `Mediana ${formatRatio(teamSummary.median)}`,
-      tone: "neutral",
-    },
-    {
-      label: "Recuperação média",
-      value: formatRatio(recoveryMean),
-      note: `${teamAthletes.length} atletas monitorados`,
-      tone: Number.isFinite(recoveryMean) && recoveryMean <= 2.5 ? "strong" : Number.isFinite(recoveryMean) && recoveryMean <= 3.2 ? "alert" : "neutral",
-    },
-    {
-      label: "Estresse médio",
-      value: formatRatio(stressMean),
-      note: "Leitura semanal",
-      tone: Number.isFinite(stressMean) && stressMean >= 4 ? "strong" : Number.isFinite(stressMean) && stressMean >= 3.2 ? "alert" : "neutral",
-    },
-  ];
-
-  return `
-    <article class="report-panel report-panel--baseline">
-      <div class="report-panel__head report-panel__head--tight">
-        <div>
-          <p>Baseline da equipe</p>
-          <span>MM3 atual na própria história da equipe</span>
-        </div>
-      </div>
-      <div class="report-baseline-grid">
-        ${summaryRows
-          .map(
-            (row) => `
-              <div class="report-baseline-card report-baseline-card--${escapeHtml(row.tone)}">
-                <span>${escapeHtml(row.label)}</span>
-                <strong>${escapeHtml(row.value)}</strong>
-                <small>${escapeHtml(row.note)}</small>
-              </div>
-            `
-          )
-          .join("")}
-      </div>
-    </article>
-  `;
-}
-
 function buildWeeklyRangeLabel(updatedAtIso) {
   const endDate = updatedAtIso ? new Date(updatedAtIso) : new Date();
-  const startDate = new Date(endDate.getTime() - 6 * 24 * 60 * 60 * 1000);
+  const startDate = new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate() - 6));
   return `${formatShortDate(startDate)} a ${formatShortDate(endDate)}`;
 }
 
-function buildAthleteLoadBaseline(athlete, teamAthletes) {
-  const baselineSeries = buildRollingWindowValues(athlete.entries, "loadScore", 3);
-  const currentMovingAverage = getCurrentMovingAverage(athlete.entries, "loadScore", 3);
-  const ownPercentile = percentile(baselineSeries, currentMovingAverage);
-  const teamCurrentMovingAverages = teamAthletes
-    .map((teamAthlete) => getCurrentMovingAverage(teamAthlete.entries, "loadScore", 3))
-    .filter((value) => Number.isFinite(value));
-  const teamPercentile = percentile(teamCurrentMovingAverages, currentMovingAverage);
-
-  return {
-    currentMovingAverage,
-    ownPercentile,
-    teamPercentile,
-    ownBand: classifyPercentileBand(ownPercentile),
-    teamBand: classifyPercentileBand(teamPercentile),
-  };
-}
-
-function buildAttentionItems(teamAthletes) {
-  return teamAthletes
-    .map((athlete) => {
-      const loadBaseline = buildAthleteLoadBaseline(athlete, teamAthletes);
-      const recoveryScore = athlete.latest.recoveryScore;
-      const stressScore = athlete.latest.stressScore;
-      const reasons = [];
-      let score = 0;
-
-      if (Number.isFinite(loadBaseline.teamPercentile) && loadBaseline.teamPercentile >= 85) {
-        reasons.push("percentil equipe muito alto");
-        score += 4;
-      } else if (Number.isFinite(loadBaseline.teamPercentile) && loadBaseline.teamPercentile >= 75) {
-        reasons.push("percentil equipe alto");
-        score += 3;
-      }
-
-      if (Number.isFinite(loadBaseline.currentMovingAverage) && loadBaseline.currentMovingAverage >= 4) {
-        reasons.push("MM3 elevado");
-        score += 2;
-      }
-
-      if (Number.isFinite(recoveryScore) && recoveryScore <= 2.2) {
-        reasons.push("recuperação muito baixa");
-        score += 4;
-      } else if (Number.isFinite(recoveryScore) && recoveryScore <= 2.8) {
-        reasons.push("recuperação baixa");
-        score += 2;
-      }
-
-      if (Number.isFinite(stressScore) && stressScore >= 4.3) {
-        reasons.push("estresse muito alto");
-        score += 3;
-      } else if (Number.isFinite(stressScore) && stressScore >= 3.8) {
-        reasons.push("estresse alto");
-        score += 2;
-      }
-
-      if (!reasons.length) {
-        return null;
-      }
-
-      const level = score >= 7 ? "Prioridade alta" : score >= 4 ? "Prioridade média" : "Monitorar";
-      const tone = score >= 7 ? "high" : score >= 4 ? "medium" : "watch";
-
-      return {
-        athlete,
-        loadBaseline,
-        recoveryScore,
-        stressScore,
-        reasons,
-        mainReason: reasons[0],
-        level,
-        tone,
-        score,
-      };
-    })
-    .filter(Boolean)
-    .sort((left, right) => right.score - left.score)
-    .slice(0, 6);
+function buildAttentionItems(teamAthletes, updatedAtIso) {
+  return Analysis.buildAttentionItems(teamAthletes, updatedAtIso);
 }
 
 function describeLoadBand(band, percentileValue) {
-  const percentileText = Number.isFinite(percentileValue) ? `${percentileValue}%` : "sem base histórica suficiente";
-  const normalized = normalizeKey(band);
-
-  if (normalized.includes("MUITO ALTA") || normalized === "ALTA") {
-    return `A carga atual está acima do padrão recente da própria equipe (${percentileText}); isso pode indicar uma semana mais exigente ou concentração de estímulos e merece cruzamento com recuperação, dor e agenda de treinos.`;
-  }
-
-  if (normalized.includes("MUITO BAIXA") || normalized === "BAIXA") {
-    return `A carga atual está abaixo da história recente da equipe (${percentileText}); pode representar alívio planejado, menor adesão aos check-ins ou redução de exposição, então vale confirmar o contexto com a comissão.`;
-  }
-
-  if (normalized === "HABITUAL") {
-    return `A carga está em faixa habitual da própria história (${percentileText}), sugerindo uma semana sem desvio importante de volume/intensidade quando comparada ao padrão interno.`;
-  }
-
-  return "Ainda não há base histórica suficiente para classificar a carga com segurança; priorize a leitura dos dados individuais e dos registros clínicos.";
+  if (!Number.isFinite(percentileValue)) return "Base histórica insuficiente para classificar o desgaste percebido da equipe.";
+  return `O desgaste percebido ficou na faixa ${band.toLowerCase()} da história da própria equipe (P${percentileValue}).`;
 }
 
 function buildWeeklyInterpretationItems(baseline, recoveryMean, stressMean, attentionItems) {
-  const items = [
+  return [
     describeLoadBand(baseline.teamHistoryBand, baseline.teamHistoryPercentile),
+    Number.isFinite(recoveryMean) ? `Recuperação média de ${formatRatio(recoveryMean)} na semana.` : "Recuperação sem respostas suficientes na semana.",
+    Number.isFinite(stressMean) ? `Estresse médio de ${formatRatio(stressMean)} na semana.` : "Estresse sem respostas suficientes na semana.",
+    `${attentionItems.length} atleta(s) atendem aos critérios individuais de atenção.`,
   ];
-
-  if (Number.isFinite(recoveryMean) && recoveryMean <= 2.8) {
-    items.push(`A recuperação média está baixa (${formatRatio(recoveryMean)}), o que aumenta a necessidade de monitorar sono, fadiga e resposta aos próximos treinos.`);
-  } else if (Number.isFinite(recoveryMean)) {
-    items.push(`A recuperação média está em ${formatRatio(recoveryMean)}, sem sinal coletivo forte de queda, mas atletas fora da média precisam de leitura individual.`);
-  }
-
-  if (Number.isFinite(stressMean) && stressMean >= 3.8) {
-    items.push(`O estresse médio está elevado (${formatRatio(stressMean)}), podendo amplificar risco percebido mesmo quando a carga externa não parece alta.`);
-  } else if (Number.isFinite(stressMean)) {
-    items.push(`O estresse médio está em ${formatRatio(stressMean)}, com leitura coletiva controlada para esta janela.`);
-  }
-
-  const highPriorityCount = attentionItems.filter((item) => item.tone === "high").length;
-  const synthesis =
-    highPriorityCount > 0
-      ? `Síntese: ${highPriorityCount} atleta(s) exigem decisão integrada antes de elevar a carga.`
-      : attentionItems.length
-        ? `Síntese: há atletas para monitoramento, mas sem concentração dominante de prioridade alta.`
-        : "Síntese: o grupo não apresenta alerta individual relevante pelos critérios de carga, recuperação e estresse.";
-
-  return [...items.slice(0, 3), synthesis];
 }
 
 function getTeamClinicalItems(items, teamName) {
@@ -1835,6 +1622,47 @@ function getTeamClinicalItems(items, teamName) {
     const itemTeam = normalizeTeamLookupKey(item.teamName);
     return itemTeam && (itemTeam === normalizedTeam || normalizedTeam.includes(itemTeam));
   });
+}
+
+function summarizeTeamAttendance(attendance = {}, teamName) {
+  const normalizedTeam = normalizeTeamLookupKey(teamName);
+  const items = (attendance.roster || []).filter(
+    (item) => normalizeTeamLookupKey(item.teamName) === normalizedTeam
+  );
+  const sourceError = (attendance.errors || []).find(
+    (error) => normalizeTeamLookupKey(error.teamName) === normalizedTeam
+  );
+  const weeklyPresent = items.reduce((total, item) => total + (item.weeklyPresent || 0), 0);
+  const weeklyPossible = items.reduce((total, item) => total + (item.weeklySessions || 0), 0);
+  const weeklyPercentage = weeklyPossible
+    ? Math.round((weeklyPresent / weeklyPossible) * 1000) / 10
+    : null;
+  const status = weeklyPossible
+    ? "available"
+    : sourceError || attendance.sourceStatus === "unavailable"
+      ? "unavailable"
+      : "no-sessions";
+
+  return {
+    status,
+    athletes: items.length,
+    weeklyPresent,
+    weeklyPossible,
+    weeklyPercentage,
+    lastSessionDate: attendance.lastSessionDate || null,
+  };
+}
+
+function formatReportAttendancePercentage(summary) {
+  if (summary.status === "unavailable") return "Indisponível";
+  if (!Number.isFinite(summary.weeklyPercentage)) return "Sem sessão";
+  return `${String(summary.weeklyPercentage).replace(".", ",")}%`;
+}
+
+function getReportAttendanceNote(summary) {
+  if (summary.status === "unavailable") return "Fonte suplementar sem acesso";
+  if (!summary.weeklyPossible) return "Nenhuma sessão válida nos últimos 7 dias";
+  return `${summary.weeklyPresent} presenças em ${summary.weeklyPossible} oportunidades`;
 }
 
 function getSyntheticTeamPrefix(modality) {
@@ -1862,8 +1690,14 @@ function buildSyntheticTeamName(modality, teamName) {
   return alreadyIncludesModality ? cleanTeamName : `${getSyntheticTeamPrefix(modality)} ${cleanTeamName}`;
 }
 
-function buildReportCategories(loadCategories, modality, physioDemands = []) {
+function buildReportCategories(loadCategories, modality, physioDemands = [], configuredCategories = []) {
   const reportCategories = [...loadCategories];
+
+  configuredCategories.forEach((teamName) => {
+    if (!reportCategories.some((current) => normalizeTeamLookupKey(current) === normalizeTeamLookupKey(teamName))) {
+      reportCategories.push(teamName);
+    }
+  });
 
   physioDemands.forEach((item) => {
     if (!item.teamName) {
@@ -1892,210 +1726,9 @@ function isPhysioRed(item) {
 }
 
 function hasVetoText(item) {
-  return normalizeKey(`${item.demand} ${item.notes}`).includes("VETADO");
-}
-
-function buildPhysioClinicalAlert(teamName, physioDemands) {
-  const teamItems = getTeamClinicalItems(physioDemands, teamName);
-  const redOrVeto = teamItems.filter((item) => isPhysioRed(item) || hasVetoText(item));
-  const yellowCount = teamItems.filter((item) => getSemaphoreTone(item.semaphore) === "yellow").length;
-
-  if (redOrVeto.length) {
-    const names = redOrVeto.slice(0, 3).map((item) => item.athleteName).join(", ");
-    return {
-      tone: "strong",
-      title: "Alerta da fisioterapia",
-      text: `${redOrVeto.length} caso(s) vermelho(s) ou com veto registrado: ${names}. Validar restrições antes de liberar carga plena.`,
-    };
-  }
-
-  if (yellowCount >= 3) {
-    return {
-      tone: "alert",
-      title: "Atenção interdisciplinar",
-      text: `${yellowCount} registros amarelos na fisioterapia. Recomenda-se alinhar treino, preparação física e atendimento clínico.`,
-    };
-  }
-
-  return null;
-}
-
-function buildSuggestedReferrals(attentionItems, physioAlert, psychologyItems) {
-  const referrals = [];
-
-  if (attentionItems.some((item) => item.tone === "high")) {
-    referrals.push("Revisar individualmente atletas de prioridade alta antes de progressões de carga.");
-  }
-
-  if (psychologyItems.length) {
-    referrals.push("Cruzar demandas da psicologia com sinais de estresse e recuperação baixa.");
-  }
-
-  if (!referrals.length) {
-    referrals.push("Manter rotina de monitoramento e discutir oscilações pontuais na reunião da comissão.");
-  }
-
-  return referrals.slice(0, 3);
-}
-
-function buildCoachSummaryHtmlLegacy(teamName, updatedAtIso, baseline, recoveryMean, stressMean, teamAthletes) {
-  const rangeLabel = buildWeeklyRangeLabel(updatedAtIso);
-  const attentionAthletes = teamAthletes
-    .map((athlete) => {
-      const loadBaseline = buildAthleteLoadBaseline(athlete, teamAthletes);
-      return {
-        athlete,
-        loadBaseline,
-        recoveryScore: athlete.latest.recoveryScore,
-        stressScore: athlete.latest.stressScore,
-      };
-    })
-    .filter(
-      (item) =>
-        Number.isFinite(item.loadBaseline.teamPercentile) &&
-        (item.loadBaseline.teamPercentile >= 75 ||
-          (Number.isFinite(item.recoveryScore) && item.recoveryScore <= 2.5) ||
-          (Number.isFinite(item.stressScore) && item.stressScore >= 4))
-    )
-    .sort((left, right) => {
-      const leftScore =
-        (left.loadBaseline.teamPercentile || 0) +
-        ((5 - (left.recoveryScore || 5)) * 8) +
-        ((left.stressScore || 0) * 4);
-      const rightScore =
-        (right.loadBaseline.teamPercentile || 0) +
-        ((5 - (right.recoveryScore || 5)) * 8) +
-        ((right.stressScore || 0) * 4);
-      return rightScore - leftScore;
-    })
-    .slice(0, 5);
-
-  const summaryItems = [
-    `Carga da equipe em ${baseline.teamHistoryBand.toLowerCase()} na própria história (${Number.isFinite(baseline.teamHistoryPercentile) ? `${baseline.teamHistoryPercentile}%` : "sem base"}).`,
-    `Recuperação média da semana em ${formatRatio(recoveryMean)} e estresse médio em ${formatRatio(stressMean)}.`,
-    `A carga recente da equipe segue uma faixa central interna de leitura, sem comparacao com outras equipes do clube.`,
-  ];
-
-  return `
-    <section class="report-coach-grid">
-      <article class="report-panel report-panel--coach">
-        <div class="report-panel__head report-panel__head--tight">
-          <div>
-            <p>Leitura da semana</p>
-            <span>Resumo para envio aos treinadores · ${rangeLabel}</span>
-          </div>
-        </div>
-        <div class="report-summary-list">
-          ${summaryItems
-            .map(
-              (item, index) => `
-                <div class="report-summary-item">
-                  <strong>0${index + 1}</strong>
-                  <span>${escapeHtml(item)}</span>
-                </div>
-              `
-            )
-            .join("")}
-        </div>
-      </article>
-      <article class="report-panel report-panel--coach">
-        <div class="report-panel__head report-panel__head--tight">
-          <div>
-            <p>Atletas para atenção</p>
-            <span>Prioridade combinando MM3 alta, recuperação baixa e estresse</span>
-          </div>
-        </div>
-        <div class="report-attention-list">
-          ${
-            attentionAthletes.length
-              ? attentionAthletes
-                  .map(
-                    ({ athlete, loadBaseline, recoveryScore, stressScore }) => `
-                      <div class="report-attention-item">
-                        <div>
-                          <strong>${escapeHtml(athlete.name)}</strong>
-                          <span>${escapeHtml(teamName)}</span>
-                        </div>
-                        <div>
-                          <small>MM3 ${formatRatio(loadBaseline.currentMovingAverage)} · Eq ${Number.isFinite(loadBaseline.teamPercentile) ? `${loadBaseline.teamPercentile}%` : "Sem base"}</small>
-                          <small>Rec ${formatRatio(recoveryScore)} · Est ${formatRatio(stressScore)}</small>
-                        </div>
-                      </div>
-                    `
-                  )
-                  .join("")
-              : '<div class="report-empty-note">Nenhum atleta entrou em atenção prioritária nesta semana.</div>'
-          }
-        </div>
-      </article>
-    </section>
-  `;
-}
-
-function buildCoachSummaryHtml(teamName, updatedAtIso, baseline, recoveryMean, stressMean, teamAthletes) {
-  const rangeLabel = buildWeeklyRangeLabel(updatedAtIso);
-  const attentionAthletes = buildAttentionItems(teamAthletes);
-  const summaryItems = buildWeeklyInterpretationItems(
-    baseline,
-    recoveryMean,
-    stressMean,
-    attentionAthletes
-  );
-
-  return `
-    <section class="report-coach-grid">
-      <article class="report-panel report-panel--coach">
-        <div class="report-panel__head report-panel__head--tight">
-          <div>
-            <p>Leitura da semana</p>
-            <span>${rangeLabel}</span>
-          </div>
-        </div>
-        <div class="report-summary-list">
-          ${summaryItems
-            .map(
-              (item, index) => `
-                <div class="report-summary-item">
-                  <strong>0${index + 1}</strong>
-                  <span>${escapeHtml(item)}</span>
-                </div>
-              `
-            )
-            .join("")}
-        </div>
-      </article>
-      <article class="report-panel report-panel--coach">
-        <div class="report-panel__head report-panel__head--tight">
-          <div>
-            <p>Atletas para atenção</p>
-            <span>Percentil equipe, MM3, recuperação e estresse</span>
-          </div>
-        </div>
-        <div class="report-attention-list">
-          ${
-            attentionAthletes.length
-              ? attentionAthletes
-                  .map(
-                    ({ athlete, loadBaseline, recoveryScore, stressScore, level, tone, mainReason }) => `
-                      <div class="report-attention-item report-attention-item--${escapeHtml(tone)}">
-                        <div>
-                          <strong>${escapeHtml(athlete.name)}</strong>
-                          <span>${escapeHtml(level)} · ${escapeHtml(mainReason)}</span>
-                        </div>
-                        <div>
-                          <small>MM3 ${formatRatio(loadBaseline.currentMovingAverage)} · Percentil equipe ${Number.isFinite(loadBaseline.teamPercentile) ? `${loadBaseline.teamPercentile}%` : "Sem base"}</small>
-                          <small>Recuperação ${formatRatio(recoveryScore)} · Estresse ${formatRatio(stressScore)}</small>
-                        </div>
-                      </div>
-                    `
-                  )
-                  .join("")
-              : '<div class="report-empty-note">Nenhum atleta entrou em atenção prioritária nesta semana.</div>'
-          }
-        </div>
-      </article>
-    </section>
-  `;
+  return getPhysioVetoLevel(item.trainingVeto) !== "none" ||
+    getPhysioVetoLevel(item.pfVeto) !== "none" ||
+    /VETO (?:TREINO|PF):\s*(?:SIM|VETADO)/.test(normalizeKey(item.notes));
 }
 
 function buildPhysioDemandPanelHtml(teamName, physioDemands) {
@@ -2103,7 +1736,7 @@ function buildPhysioDemandPanelHtml(teamName, physioDemands) {
   const teamItems = allTeamItems;
 
   return `
-    <article class="report-panel report-panel--physio">
+    <article class="report-panel report-panel--physio ${teamItems.length >= 4 ? "report-panel--dense" : ""}">
       <div class="report-panel__head report-panel__head--tight">
         <div>
           <p>Fisioterapia</p>
@@ -2139,7 +1772,7 @@ function buildPsychologyDemandPanelHtml(teamName, psychologyDemands) {
   const teamItems = allTeamItems.slice(0, 5);
 
   return `
-    <article class="report-panel report-panel--psychology">
+    <article class="report-panel report-panel--psychology ${teamItems.length >= 4 ? "report-panel--dense" : ""}">
       <div class="report-panel__head report-panel__head--tight">
         <div>
           <p>Psicologia</p>
@@ -2181,80 +1814,27 @@ function getSemaphoreTone(value) {
   return "neutral";
 }
 
-function buildClinicalAlertHtml(alert) {
-  if (!alert) {
-    return "";
-  }
-
-  return `
-    <article class="report-panel report-panel--clinical-alert report-panel--clinical-alert-${escapeHtml(alert.tone)}">
-      <div class="report-panel__head report-panel__head--tight">
-        <div>
-          <p>${escapeHtml(alert.title)}</p>
-          <span>Fisioterapia</span>
-        </div>
-      </div>
-      <strong>${escapeHtml(alert.text)}</strong>
-    </article>
-  `;
-}
-
-function buildSupportPanelHtml(attentionItems, physioAlert, psychologyItems) {
-  const referrals = buildSuggestedReferrals(attentionItems, physioAlert, psychologyItems);
-
-  return `
-    <section class="report-support-grid">
-      <article class="report-panel report-panel--support">
-        <div class="report-panel__head report-panel__head--tight">
-          <div>
-            <p>Encaminhamentos sugeridos</p>
-            <span>Para discussão com a comissão</span>
-          </div>
-        </div>
-        <div class="report-summary-list">
-          ${referrals
-            .map(
-              (item, index) => `
-                <div class="report-summary-item">
-                  <strong>${index + 1}</strong>
-                  <span>${escapeHtml(item)}</span>
-                </div>
-              `
-            )
-            .join("")}
-        </div>
-      </article>
-      <article class="report-panel report-panel--support">
-        <div class="report-panel__head report-panel__head--tight">
-          <div>
-            <p>Nota metodológica</p>
-            <span>Interpretação dos indicadores</span>
-          </div>
-        </div>
-        <div class="report-method-list">
-          <span><strong>Carga mediana da semana:</strong> valor central da carga recente da equipe, reduzindo o efeito de extremos individuais.</span>
-          <span><strong>MM3:</strong> média móvel dos últimos 3 check-ins.</span>
-          <span><strong>Percentil histórico:</strong> posição da carga atual em relação à própria história da equipe.</span>
-          <span><strong>Percentil equipe:</strong> posição do atleta em relação aos colegas da mesma equipe.</span>
-          <small>Os check-ins são autorrelatos e devem ser interpretados junto à comissão técnica, preparação física, fisioterapia e psicologia.</small>
-        </div>
-      </article>
-    </section>
-  `;
-}
-
-function buildTeamOverviewRows(athletes, categories, updatedAtIso, modalityId, physioDemands, psychologyDemands) {
+function buildTeamOverviewRows(
+  athletes,
+  categories,
+  updatedAtIso,
+  modalityId,
+  physioDemands,
+  psychologyDemands,
+  attendance = {}
+) {
   return categories
     .filter((category) => inferModalityId(category) === modalityId)
     .map((teamName) => {
       const teamAthletes = getAthletesByTeam(athletes, teamName);
-      const baseline = buildTeamLoadBaseline(athletes, categories, teamName);
-      const loadMedian = roundNumber(quantile(getTeamDistribution(athletes, teamName, "loadScore", updatedAtIso, 30), 0.5), 1);
-      const recoveryMean = roundNumber(getTeamAggregate(athletes, teamName, "recoveryScore", updatedAtIso, 30), 1);
-      const stressMean = roundNumber(getTeamAggregate(athletes, teamName, "stressScore", updatedAtIso, 30), 1);
-      const attentionItems = buildAttentionItems(teamAthletes);
+      const baseline = buildTeamLoadBaseline(athletes, categories, teamName, updatedAtIso);
+      const loadMedian = roundNumber(quantile(getTeamDistribution(athletes, teamName, "loadScore", updatedAtIso, Analysis.ANALYSIS_CONFIG.reportWeekDays), 0.5), 1);
+      const recoveryMean = roundNumber(getTeamAggregate(athletes, teamName, "recoveryScore", updatedAtIso, Analysis.ANALYSIS_CONFIG.reportWeekDays), 1);
+      const stressMean = roundNumber(getTeamAggregate(athletes, teamName, "stressScore", updatedAtIso, Analysis.ANALYSIS_CONFIG.reportWeekDays), 1);
+      const attentionItems = buildAttentionItems(teamAthletes, updatedAtIso);
       const teamPhysio = getTeamClinicalItems(physioDemands, teamName);
       const teamPsychology = getTeamClinicalItems(psychologyDemands, teamName);
+      const attendanceSummary = summarizeTeamAttendance(attendance, teamName);
       const highPriority = attentionItems.filter((item) => item.tone === "high").length;
       const physioPriorityCount = teamPhysio.filter((item) => isPhysioRed(item) || hasVetoText(item)).length;
       const synthesis = highPriority
@@ -2262,10 +1842,11 @@ function buildTeamOverviewRows(athletes, categories, updatedAtIso, modalityId, p
           : physioPriorityCount
             ? `${physioPriorityCount} registro(s) prioritario(s) na fisio`
           : baseline.teamHistoryBand === "Alta" || baseline.teamHistoryBand === "Muito alta"
-            ? "Carga acima do habitual"
+            ? "Desgaste acima do habitual"
             : baseline.teamHistoryBand === "Baixa" || baseline.teamHistoryBand === "Muito baixa"
-              ? "Semana de carga reduzida"
-              : "Quadro controlado";
+              ? "Desgaste abaixo do habitual"
+              : Analysis.getAnalysisEligibleAthletes(teamAthletes, updatedAtIso, { days: Analysis.ANALYSIS_CONFIG.reportWeekDays }).length === 0
+                ? "Sem check-in na semana" : "Sem destaque coletivo";
 
       return {
         teamName,
@@ -2276,21 +1857,32 @@ function buildTeamOverviewRows(athletes, categories, updatedAtIso, modalityId, p
         attentionCount: attentionItems.length,
         physioCount: teamPhysio.length,
         psychologyCount: teamPsychology.length,
+        attendancePercentage: attendanceSummary.weeklyPercentage,
+        attendanceStatus: attendanceSummary.status,
         synthesis,
-        sortScore: attentionItems.length * 3 + teamPhysio.filter((item) => isPhysioRed(item) || hasVetoText(item)).length * 5,
+        weeklyCount: teamAthletes.filter((athlete) => Analysis.recentEntries(athlete, updatedAtIso).length).length,
       };
-    })
-    .sort((left, right) => right.sortScore - left.sortScore || left.teamName.localeCompare(right.teamName, "pt-BR"));
+    });
 }
 
-function buildOverviewPageHtml(athletes, categories, updatedAtIso, modality, crestDataUrl, physioDemands, psychologyDemands) {
+function buildOverviewPageHtml(
+  athletes,
+  categories,
+  updatedAtIso,
+  modality,
+  crestDataUrl,
+  physioDemands,
+  psychologyDemands,
+  attendance = {}
+) {
   const rows = buildTeamOverviewRows(
     athletes,
     categories,
     updatedAtIso,
     modality.id,
     physioDemands,
-    psychologyDemands
+    psychologyDemands,
+    attendance
   );
   const totalAthletes = rows.reduce((total, row) => total + row.athletesCount, 0);
   const totalAttention = rows.reduce((total, row) => total + row.attentionCount, 0);
@@ -2306,7 +1898,7 @@ function buildOverviewPageHtml(athletes, categories, updatedAtIso, modality, cre
           <div>
             <p class="report-eyebrow">Olympico Club</p>
             <h1>Panorama ${escapeHtml(modality.label)}</h1>
-            <p class="report-subtitle">Comparativo de carga por equipe</p>
+            <p class="report-subtitle">Comparativo semanal entre equipes</p>
           </div>
         </div>
         <div class="report-header__meta">
@@ -2326,20 +1918,21 @@ function buildOverviewPageHtml(athletes, categories, updatedAtIso, modality, cre
         <div class="report-panel__head report-panel__head--tight">
           <div>
             <p>Comparativo entre equipes</p>
-            <span>Carga, recuperação, estresse e demandas integradas</span>
+            <span>Desgaste percebido, recuperação, estresse e demandas integradas</span>
           </div>
         </div>
         <table class="report-overview-table">
           <thead>
             <tr>
               <th>Equipe</th>
-              <th>Atletas</th>
-              <th>Carga mediana</th>
+              <th>Com resposta</th>
+              <th>Desgaste percebido</th>
               <th>Recuperação</th>
               <th>Estresse</th>
               <th>Atenção</th>
               <th>Fisio</th>
               <th>Psico</th>
+              <th>Presença PF</th>
               <th>Síntese</th>
             </tr>
           </thead>
@@ -2349,13 +1942,17 @@ function buildOverviewPageHtml(athletes, categories, updatedAtIso, modality, cre
                 (row) => `
                   <tr>
                     <td><strong>${escapeHtml(row.teamName)}</strong></td>
-                    <td>${row.athletesCount}</td>
+                    <td>${row.weeklyCount} / ${row.athletesCount}</td>
                     <td>${escapeHtml(formatRatio(row.loadMedian))}</td>
                     <td>${escapeHtml(formatRatio(row.recoveryMean))}</td>
                     <td>${escapeHtml(formatRatio(row.stressMean))}</td>
                     <td>${row.attentionCount}</td>
                     <td>${row.physioCount}</td>
                     <td>${row.psychologyCount}</td>
+                    <td>${escapeHtml(formatReportAttendancePercentage({
+                      status: row.attendanceStatus,
+                      weeklyPercentage: row.attendancePercentage,
+                    }))}</td>
                     <td>${escapeHtml(row.synthesis)}</td>
                   </tr>
                 `
@@ -2374,21 +1971,22 @@ function buildOverviewPageHtml(athletes, categories, updatedAtIso, modality, cre
             </div>
           </div>
           <div class="report-method-list">
-            <span><strong>Carga mediana da semana:</strong> valor central da carga recente da equipe.</span>
-            <span><strong>Em atenção:</strong> atletas classificados por percentil equipe, MM3, recuperação baixa e estresse alto.</span>
+            <span><strong>Desgaste percebido da semana:</strong> mediana dos autorrelatos dos últimos 7 dias.</span>
+            <span><strong>Em atenção:</strong> valores absolutos, persistência e alterações no padrão pessoal.</span>
             <span><strong>Fisio/Psico:</strong> registros ativos nas abas clínicas, filtrados pela equipe.</span>
+            <span><strong>Presença PF:</strong> presenças divididas pelas oportunidades nas sessões válidas dos últimos 7 dias.</span>
           </div>
         </article>
         <article class="report-panel report-panel--support">
           <div class="report-panel__head report-panel__head--tight">
             <div>
               <p>Síntese geral</p>
-              <span>Prioridades para discussão</span>
+              <span>Síntese descritiva</span>
             </div>
           </div>
           <div class="report-method-list">
             <span>${escapeHtml(totalAttention ? `${totalAttention} atleta(s) aparecem em atenção na modalidade.` : "Nenhum atleta entrou em atenção pelos critérios combinados.")}</span>
-            <span>${escapeHtml(totalPhysio ? `${totalPhysio} demanda(s) de fisioterapia devem ser cruzadas com a carga.` : "Sem demandas de fisioterapia registradas para esta modalidade.")}</span>
+            <span>${escapeHtml(totalPhysio ? `${totalPhysio} demanda(s) de fisioterapia registradas.` : "Sem demandas de fisioterapia registradas para esta modalidade.")}</span>
             <span>${escapeHtml(totalPsychology ? `${totalPsychology} registro(s) de psicologia adicionam contexto ao monitoramento.` : "Sem registros de psicologia para esta modalidade.")}</span>
           </div>
         </article>
@@ -2405,23 +2003,19 @@ function buildTeamReportSection(
   teamName,
   crestDataUrl,
   physioDemands = [],
-  psychologyDemands = []
+  psychologyDemands = [],
+  attendance = {}
 ) {
   const teamAthletes = getAthletesByTeam(athletes, teamName);
   const trendSeries = buildTrendSeries(athletes, teamName, updatedAtIso);
-  const loadMedian = roundNumber(quantile(getTeamDistribution(athletes, teamName, "loadScore", updatedAtIso, 30), 0.5), 1);
-  const recoveryMean = roundNumber(getTeamAggregate(athletes, teamName, "recoveryScore", updatedAtIso, 30), 1);
-  const stressMean = roundNumber(getTeamAggregate(athletes, teamName, "stressScore", updatedAtIso, 30), 1);
-  const teamSummary = {
-    p25: roundNumber(quantile(getTeamDistribution(athletes, teamName, "loadScore", updatedAtIso, 30), 0.25), 1),
-    median: loadMedian,
-    p75: roundNumber(quantile(getTeamDistribution(athletes, teamName, "loadScore", updatedAtIso, 30), 0.75), 1),
-  };
-  const baseline = buildTeamLoadBaseline(athletes, categories, teamName);
-  const attentionItems = buildAttentionItems(teamAthletes);
-  const physioAlert = null;
+  const loadMedian = roundNumber(quantile(getTeamDistribution(athletes, teamName, "loadScore", updatedAtIso, Analysis.ANALYSIS_CONFIG.reportWeekDays), 0.5), 1);
+  const recoveryMean = roundNumber(getTeamAggregate(athletes, teamName, "recoveryScore", updatedAtIso, Analysis.ANALYSIS_CONFIG.reportWeekDays), 1);
+  const stressMean = roundNumber(getTeamAggregate(athletes, teamName, "stressScore", updatedAtIso, Analysis.ANALYSIS_CONFIG.reportWeekDays), 1);
+  const baseline = buildTeamLoadBaseline(athletes, categories, teamName, updatedAtIso);
+  const attentionItems = buildAttentionItems(teamAthletes, updatedAtIso);
   const physioItems = getTeamClinicalItems(physioDemands, teamName);
   const psychologyItems = getTeamClinicalItems(psychologyDemands, teamName);
+  const attendanceSummary = summarizeTeamAttendance(attendance, teamName);
   const hasLoadReport = teamAthletes.length > 0;
 
   if (!hasLoadReport && physioItems.length) {
@@ -2464,6 +2058,11 @@ function buildTeamReportSection(
             <span>Prioritários</span>
             <strong>${priorityCount}</strong>
           </article>
+          <article class="report-stat report-stat--attendance">
+            <span>Presença PF (7 dias)</span>
+            <strong>${escapeHtml(formatReportAttendancePercentage(attendanceSummary))}</strong>
+            <small>${escapeHtml(getReportAttendanceNote(attendanceSummary))}</small>
+          </article>
         </section>
 
         <section class="report-clinical-grid report-clinical-grid--single">
@@ -2476,12 +2075,12 @@ function buildTeamReportSection(
             <div class="report-panel__head report-panel__head--tight">
               <div>
                 <p>Nota de leitura</p>
-                <span>Equipe sem base de carga nesta modalidade</span>
+                <span>Equipe sem base de check-in nesta modalidade</span>
               </div>
             </div>
             <div class="report-method-list">
               <span>Esta equipe aparece no relatório geral por ter registros ativos na planilha da fisioterapia.</span>
-              <span>Não há check-ins de carga suficientes para montar os painéis de carga, recuperação, estresse e baseline.</span>
+              <span>Não há check-ins suficientes para montar os painéis de desgaste percebido, recuperação, estresse e contexto histórico.</span>
             </div>
           </article>
         </section>
@@ -2489,64 +2088,65 @@ function buildTeamReportSection(
     `;
   }
 
+  const weeklyCount = teamAthletes.filter((athlete) => Analysis.recentEntries(athlete, updatedAtIso).length).length;
+  const eligible = Analysis.getAnalysisEligibleAthletes(teamAthletes, updatedAtIso);
+  const visibleAttention = attentionItems.slice(0, 5);
+  const panorama = !weeklyCount
+    ? "Sem check-ins na semana para interpretar o estado atual da equipe."
+    : attentionItems.some((item) => item.tone === "high")
+      ? `${attentionItems.filter((item) => item.tone === "high").length} atleta(s) com critério de atenção alta na semana.`
+      : Number.isFinite(baseline.teamHistoryPercentile)
+        ? `Desgaste percebido ${baseline.teamHistoryBand.toLowerCase()} em relação à história da equipe.`
+        : "Semana com dados atuais; base histórica insuficiente para classificar o padrão coletivo.";
+  const clinicalClass = !psychologyItems.length ? "report-clinical-grid--single" : !physioItems.length ? "report-clinical-grid--psych-only" : physioItems.length >= 4 || psychologyItems.length >= 4 ? "report-clinical-grid--dense" : "";
   return `
-    <section class="report-page report-page--team">
-      <div class="report-page__bg"></div>
+    <section class="report-page report-page--team report-page--team-first">
       <header class="report-header">
-        <div class="report-header__brand">
-          <img src="${crestDataUrl || ""}" alt="Escudo do Olympico Clube" />
-          <div>
-            <p class="report-eyebrow">Olympico Club</p>
-            <h1>${escapeHtml(teamName)}</h1>
-            <p class="report-subtitle">${escapeHtml(modality.label)} · relatório de carga</p>
-          </div>
+        <div class="report-header__brand"><img src="${crestDataUrl || ""}" alt="Escudo do Olympico Club" />
+          <div><p class="report-eyebrow">OLYMPICO CLUB</p><h1>${escapeHtml(teamName)}</h1><p class="report-subtitle">RELATÓRIO DE EQUIPE</p></div>
         </div>
-        <div class="report-header__meta">
-          <span>Relatório de equipe</span>
-          <strong>${escapeHtml(formatDate(updatedAtIso ? new Date(updatedAtIso) : new Date()))}</strong>
-        </div>
+        <div class="report-header__meta"><span>Período da análise</span><strong>${escapeHtml(buildWeeklyRangeLabel(updatedAtIso))}</strong><small>Emitido em ${escapeHtml(formatDate(new Date()))}</small></div>
       </header>
-
-      <section class="report-stats">
-        <article class="report-stat">
-          <span>Atletas</span>
-          <strong>${teamAthletes.length}</strong>
-        </article>
-        <article class="report-stat">
-          <span>Carga mediana da semana</span>
-          <strong>${escapeHtml(formatRatio(loadMedian))}</strong>
-        </article>
-        <article class="report-stat">
-          <span>Recuperação</span>
-          <strong>${escapeHtml(formatRatio(recoveryMean))}</strong>
-        </article>
-        <article class="report-stat">
-          <span>Estresse</span>
-          <strong>${escapeHtml(formatRatio(stressMean))}</strong>
+      <article class="report-panel report-panorama">
+        <div><p class="report-section-label">Panorama da semana</p><h2>${escapeHtml(panorama)}</h2></div>
+        <div class="report-panorama__meta"><strong>${weeklyCount} / ${teamAthletes.length}</strong><span>atletas com resposta na semana</span></div>
+      </article>
+      <h2 class="report-section-label">Indicadores principais</h2>
+      <section class="report-stats report-stats--primary">
+        <article class="report-stat"><span>Desgaste percebido</span><strong>${escapeHtml(formatRatio(loadMedian))}</strong><small>Mediana · 7 dias</small></article>
+        <article class="report-stat"><span>Recuperação</span><strong>${escapeHtml(formatRatio(recoveryMean))}</strong><small>Média · 7 dias</small></article>
+        <article class="report-stat"><span>Estresse</span><strong>${escapeHtml(formatRatio(stressMean))}</strong><small>Média · 7 dias</small></article>
+        <article class="report-stat report-stat--attendance"><span>Presença PF (7 dias)</span><strong>${escapeHtml(formatReportAttendancePercentage(attendanceSummary))}</strong><small>${escapeHtml(getReportAttendanceNote(attendanceSummary))}</small></article>
+      </section>
+      <section class="report-main-grid report-main-grid--editorial">
+        <article class="report-panel report-panel--chart"><div class="report-panel__head"><p>Evolução da equipe</p><span>Últimos 90 dias válidos</span></div>${buildLineChartSvg(trendSeries)}</article>
+        <article class="report-panel"><div class="report-panel__head"><p>Leitura da semana</p></div>
+          <div class="report-summary-list">${buildWeeklyInterpretationItems(baseline, recoveryMean, stressMean, attentionItems).slice(0, 4).map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div>
         </article>
       </section>
-
-      <section class="report-main-grid">
-        <article class="report-panel report-panel--chart">
-        <div class="report-panel__head">
-          <p>Evolução média</p>
-          <span>Últimos 90 dias válidos</span>
-        </div>
-        ${buildLineChartSvg(trendSeries)}
-        </article>
-
-        ${buildCoachSummaryHtml(teamName, updatedAtIso, baseline, recoveryMean, stressMean, teamAthletes)}
-      </section>
-
-      <section class="report-clinical-grid">
-        ${buildPhysioDemandPanelHtml(teamName, physioDemands)}
-        ${buildPsychologyDemandPanelHtml(teamName, psychologyDemands)}
-      </section>
-
-      ${buildBaselinePanelHtml(teamName, baseline, teamSummary, recoveryMean, stressMean, teamAthletes)}
-      ${buildSupportPanelHtml(attentionItems, physioAlert, psychologyItems)}
+      <article class="report-panel report-attention-table"><div class="report-panel__head"><p>Atletas em atenção</p><span>${attentionItems.length} com critérios na semana</span></div>
+        <table><thead><tr><th>Atleta</th><th>Situação</th><th>Desgaste</th><th>Recuperação</th><th>Estresse</th><th>Principal sinal</th></tr></thead><tbody>
+        ${visibleAttention.length ? visibleAttention.map((item) => `<tr><td>${escapeHtml(item.athlete.name)}</td><td><span class="attention-badge attention-badge--${item.tone}">${escapeHtml(item.level)}</span></td><td>${escapeHtml(formatRatio(item.metrics.load))}</td><td>${escapeHtml(formatRatio(item.metrics.recovery))}</td><td>${escapeHtml(formatRatio(item.metrics.stress))}</td><td>${escapeHtml(item.primaryReason)}</td></tr>`).join("") : '<tr><td colspan="6">Nenhum atleta atende aos critérios nesta semana.</td></tr>'}
+        </tbody></table>${attentionItems.length > 5 ? `<small>+ ${attentionItems.length - 5} atleta(s) em acompanhamento no dashboard.</small>` : ""}
+      </article>
     </section>
-  `;
+    <section class="report-page report-page--team report-page--team-second">
+      <header class="report-header report-header--compact"><div class="report-header__brand"><img src="${crestDataUrl || ""}" alt="" /><div><p class="report-eyebrow">OLYMPICO CLUB</p><h1>${escapeHtml(teamName)}</h1><p class="report-subtitle">CONTEXTO INTERDISCIPLINAR</p></div></div><div class="report-header__meta"><strong>${escapeHtml(buildWeeklyRangeLabel(updatedAtIso))}</strong></div></header>
+      <section class="report-clinical-grid ${clinicalClass}">${physioItems.length || !psychologyItems.length ? buildPhysioDemandPanelHtml(teamName, physioDemands) : ""}${psychologyItems.length ? buildPsychologyDemandPanelHtml(teamName, psychologyDemands) : '<article class="report-panel report-panel--psychology"><div class="report-panel__head"><p>Psicologia</p></div><p class="report-empty-note">Sem registros para esta equipe.</p></article>'}</section>
+      <section class="report-support-grid">
+        <article class="report-panel"><div class="report-panel__head"><p>Contexto histórico da equipe</p></div><div class="report-method-list"><span>Média das 3 respostas atuais: <strong>${escapeHtml(formatRatio(baseline.currentTeamAverage))}</strong></span><span>Padrão pessoal da equipe: <strong>${escapeHtml(baseline.teamHistoryBand)}</strong></span><span>Percentil histórico: <strong>${Number.isFinite(baseline.teamHistoryPercentile) ? `${baseline.teamHistoryPercentile}%` : "Base histórica insuficiente"}</strong> · ${baseline.baselineCount} janelas anteriores</span><span>Recuperação semanal ${escapeHtml(formatRatio(recoveryMean))} · Estresse semanal ${escapeHtml(formatRatio(stressMean))}</span></div></article>
+        <article class="report-panel"><div class="report-panel__head"><p>Cobertura dos dados</p></div><div class="report-method-list"><span>${weeklyCount} de ${teamAthletes.length} atletas com check-in na semana</span><span>${eligible.length} atletas com check-in nos últimos 20 dias</span><span>Fisioterapia: ${physioItems.length} registro(s) · Psicologia: ${psychologyItems.length} registro(s)</span><span>Presença PF: ${escapeHtml(getReportAttendanceNote(attendanceSummary))}</span></div></article>
+      </section>
+      <article class="report-panel report-methodology"><div class="report-panel__head"><p>Nota metodológica</p></div><div class="report-method-list">
+        <span><strong>Desgaste percebido:</strong> índice de autorrelatos de dor, fadiga, sono, dor muscular, estresse e humor. Não equivale a carga externa ou interna de treinamento.</span>
+        <span><strong>Recuperação percebida:</strong> síntese dos domínios orientada para que valores maiores indiquem melhor condição percebida.</span>
+        <span><strong>Média das 3 últimas respostas:</strong> média dos três check-ins válidos mais recentes.</span>
+        <span><strong>Percentil histórico:</strong> posição da janela atual diante das anteriores da própria equipe, exibida com pelo menos 6 janelas anteriores.</span>
+        <span><strong>Percentil da equipe:</strong> contexto relativo entre pelo menos 6 atletas elegíveis; não gera alerta isoladamente.</span>
+        <span><strong>Atletas em atenção:</strong> valores absolutos, persistência, padrão pessoal e combinação entre domínios.</span>
+        <small>Check-ins são autorrelatos e devem ser interpretados com observação profissional, preparação física, fisioterapia e psicologia.</small>
+      </div></article>
+    </section>`;
 }
 
 function buildPrintReportHtml(
@@ -2564,7 +2164,10 @@ function buildPrintReportHtml(
 
   const athletes = enrichAthletes(payload.athletes);
   const loadCategories = payload.categories.filter((category) => inferModalityId(category) === modalityId);
-  const categories = buildReportCategories(loadCategories, modality, physioDemands);
+  const configuredCategories = listAttendanceTeams()
+    .filter((item) => item.modalityId === modalityId)
+    .map((item) => item.teamName);
+  const categories = buildReportCategories(loadCategories, modality, physioDemands, configuredCategories);
   if (!categories.length) {
     throw new Error("Nenhuma equipe encontrada para a modalidade selecionada.");
   }
@@ -2587,7 +2190,8 @@ function buildPrintReportHtml(
         modality,
         crestDataUrl,
         physioDemands,
-        psychologyDemands
+        psychologyDemands,
+        payload.attendance
       );
 
   const pages = overviewPage + reportCategories
@@ -2600,7 +2204,8 @@ function buildPrintReportHtml(
         teamName,
         crestDataUrl,
         physioDemands,
-        psychologyDemands
+        psychologyDemands,
+        payload.attendance
       )
     )
     .join("");
@@ -2753,7 +2358,7 @@ function buildPrintReportHtml(
 
         .report-stats {
           display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+          grid-template-columns: repeat(5, minmax(0, 1fr));
           gap: 2.4mm;
           margin-bottom: 3mm;
         }
@@ -2782,6 +2387,18 @@ function buildPrintReportHtml(
         .report-stat strong {
           font-size: 16px;
           color: var(--navy);
+        }
+
+        .report-stat small {
+          display: block;
+          margin-top: 1mm;
+          color: var(--muted);
+          font-size: 8px;
+          line-height: 1.25;
+        }
+
+        .report-stat--attendance {
+          border-top: 1.2mm solid #168a64;
         }
 
         .report-panel {
@@ -3176,6 +2793,77 @@ function buildPrintReportHtml(
           font-family: "Segoe UI", Arial, sans-serif;
           font-weight: 800;
         }
+        :root {
+          --report-navy: #111a3f; --report-navy-2: #182855; --report-blue: #315ea8;
+          --report-red: #df3046; --report-green: #168a64; --report-amber: #d99a2b;
+          --report-bg: #f3f6fb; --report-card: #fff; --report-line: #dce3ef;
+          --report-ink: #17213d; --report-muted: #68758f;
+          --navy: var(--report-navy); --navy-soft: var(--report-navy-2);
+          --blue: var(--report-blue); --red: var(--report-red); --paper: var(--report-bg);
+          --line: var(--report-line); --ink: var(--report-ink); --muted: var(--report-muted);
+        }
+        .report-page { height: 210mm; min-height: 210mm; padding: 9mm 11mm 8mm; overflow: hidden; background: var(--report-bg); }
+        .report-page__bg { display: none; }
+        .report-header { min-height: 25mm; padding: 2.5mm 5mm; background: var(--report-navy); border-radius: 2.5mm; margin-bottom: 3mm; }
+        .report-header__brand { padding: 0; background: none; border: 0; box-shadow: none; }
+        .report-header__brand img { width: 16mm; height: 16mm; filter: none; }
+        .report-header h1 { font-size: 24px; line-height: 1.05; text-shadow: none; }
+        .report-eyebrow { font-size: 8px; letter-spacing: .15em; opacity: 1; }
+        .report-subtitle { font-size: 9px; letter-spacing: .1em; font-weight: 600; }
+        .report-header__meta { background: none; border: 0; padding: 0; }
+        .report-header__meta strong { font-size: 12px; }
+        .report-header__meta small { font-size: 8px; }
+        .report-header--compact { min-height: 20mm; }
+        .report-header--compact .report-header__brand img { width: 12mm; height: 12mm; }
+        .report-header--compact h1 { font-size: 18px; }
+        .report-section-label { display: block; margin: 0 0 1.8mm; color: var(--report-navy); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+        .report-panel { border: 1px solid var(--report-line); background: #fff; border-radius: 2mm; padding: 2.5mm 3mm; box-shadow: none; }
+        .report-panorama { display: flex; align-items: center; justify-content: space-between; gap: 8mm; margin-bottom: 3mm; border-left: 1mm solid var(--report-blue); }
+        .report-panorama h2 { margin: 0; font-size: 15px; line-height: 1.25; font-weight: 700; }
+        .report-panorama__meta { min-width: 34mm; display: grid; text-align: right; }
+        .report-panorama__meta strong { color: var(--report-blue); font-size: 18px; }
+        .report-panorama__meta span { color: var(--report-muted); font-size: 9px; }
+        .report-stats--primary { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2mm; margin-bottom: 3mm; }
+        .report-stat { border: 1px solid var(--report-line); border-radius: 2mm; padding: 2.5mm 3mm; box-shadow: none; }
+        .report-stat span { font-size: 9px; letter-spacing: .06em; color: var(--report-muted); }
+        .report-stat strong { font-size: 20px; }
+        .report-stat small { font-size: 8px; }
+        .report-main-grid--editorial { grid-template-columns: 1.4fr .8fr; gap: 2.5mm; align-items: stretch; margin-bottom: 3mm; }
+        .report-main-grid--editorial .report-panel { min-height: 63mm; }
+        .report-main-grid--editorial .report-svg { max-height: 48mm; }
+        .report-summary-list p { margin: 0; padding: 1.5mm 0; border-bottom: 1px solid var(--report-line); color: var(--report-ink); font-size: 10px; line-height: 1.3; }
+        .report-summary-list p:last-child { border-bottom: 0; }
+        .report-panel__head p { color: var(--report-navy); font-size: 13px; }
+        .report-panel__head span { color: var(--report-muted); font-size: 9px; }
+        .report-attention-table table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
+        .report-attention-table th { background: var(--report-navy-2); color: #fff; text-align: left; padding: 1.8mm; }
+        .report-attention-table td { padding: 1.8mm; border-bottom: 1px solid var(--report-line); overflow-wrap: anywhere; }
+        .report-attention-table th:first-child, .report-attention-table td:first-child { width: 26%; font-weight: 700; }
+        .report-attention-table th:last-child, .report-attention-table td:last-child { width: 26%; }
+        .report-attention-table small { display: block; margin-top: 1.5mm; color: var(--report-muted); }
+        .attention-badge { display: inline-block; padding: 1mm 1.5mm; border-radius: 1mm; white-space: nowrap; color: var(--report-blue); background: #eaf0fa; }
+        .attention-badge--high { color: var(--report-red); background: #fff0f2; }
+        .attention-badge--medium { color: #946019; background: #fff4df; }
+        .report-page--team-second { height: auto; overflow: visible; }
+        .report-page--team-second .report-clinical-grid { margin-top: 0; grid-template-columns: 1.5fr 1fr; }
+        .report-page--team-second .report-clinical-grid--single, .report-page--clinical-only .report-clinical-grid--single { grid-template-columns: 1.7fr .6fr; }
+        .report-page--team-second .report-clinical-grid--psych-only { grid-template-columns: 1fr; }
+        .report-page--team-second .report-clinical-grid--dense { grid-template-columns: 1fr 1fr; }
+        .report-panel--dense .report-physio-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5mm; }
+        .report-panel--dense .report-physio-item { padding: 1.8mm 2mm; gap: .5mm; }
+        .report-panel--dense .report-physio-item span, .report-panel--dense .report-physio-item small { font-size: 9px; line-height: 1.2; }
+        .report-physio-item { break-inside: avoid; }
+        .report-page--team-second .report-support-grid { margin-top: 3mm; }
+        .report-methodology { margin-top: 2mm; }
+        .report-methodology .report-method-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5mm 4mm; }
+        .report-methodology .report-method-list small { grid-column: 1 / -1; }
+        .report-method-list { gap: 1mm; }
+        .report-page--team-second .report-panel { padding: 3.2mm 3.5mm; }
+        .report-page--team-second .report-physio-item { padding: 2mm 2.5mm; }
+        .report-page--team-second .report-panel--dense .report-physio-item { padding: 1.3mm 1.6mm; }
+        .report-page--team-second .report-panel--dense .report-physio-item span, .report-page--team-second .report-panel--dense .report-physio-item small { margin-top: .4mm; }
+        .report-page--team-second .report-panel__head--tight { margin-bottom: 1.5mm; }
+        .report-method-list span, .report-method-list small { font-size: 10px; line-height: 1.4; }
       </style>
     </head>
     <body>${pages}</body>
@@ -3460,6 +3148,24 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (requestUrl.pathname === "/api/attendance") {
+    try {
+      await handleAttendanceApi(requestUrl, response);
+    } catch (error) {
+      response.writeHead(500, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store",
+      });
+      response.end(
+        JSON.stringify({
+          message: "Nao foi possivel carregar a presenca da preparacao fisica agora.",
+          details: error.message,
+        })
+      );
+    }
+    return;
+  }
+
   if (requestUrl.pathname === "/api/export-pdf") {
     try {
       await handleExportPdf(requestUrl, response);
@@ -3552,19 +3258,23 @@ function startServer(port, attempt = 0) {
     process.exitCode = 1;
   });
 
-  server.listen(port, HOST, () => {
-    announceServer(port);
-  });
+  server.listen(port, HOST);
 }
 
 if (require.main === module) {
+  server.once("listening", () => announceServer(server.address().port));
   startServer(PORT);
 }
 
 module.exports = {
+  buildPrintReportHtml,
   buildPhysioDemandPanelHtml,
+  buildTeamReportSection,
+  extractPrimaryAthleteRoster,
   filterPhysiotherapyItems,
   getPhysioVetoLevel,
+  summarizeTeamAttendance,
   summarizePhysiotherapyItems,
+  transformRows,
   transformPhysioModalityRows,
 };

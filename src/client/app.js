@@ -1,5 +1,5 @@
 const METRICS = [
-  { key: "loadScore", label: "Carga", max: 5, color: "#4246a6" },
+  { key: "loadScore", label: "Desgaste percebido", max: 5, color: "#4246a6" },
   { key: "recoveryScore", label: "Recuperação", max: 5, color: "#168a64" },
   { key: "painLevel", label: "Dor", max: 10, color: "#df3046" },
   { key: "fatigueScore", label: "Fadiga", max: 5, color: "#d98418" },
@@ -25,6 +25,7 @@ const DEPLOYMENT = {
   staticHosting: false,
   reportsEnabled: true,
   athletesUrl: "/api/athletes",
+  attendanceUrl: "/api/attendance",
   physiotherapyUrl: "/api/physiotherapy",
   ...(window.OLYMPICO_CONFIG || {}),
 };
@@ -42,11 +43,11 @@ const state = {
   },
   controls: {
     timeline: {
-      period: "90",
+      period: String(OlympicoAnalysis.ANALYSIS_CONFIG.trendDays),
       metrics: ["loadScore", "recoveryScore", "painLevel", "stressScore"],
     },
     profile: {
-      period: "90",
+      period: String(OlympicoAnalysis.ANALYSIS_CONFIG.trendDays),
       metrics: ["loadScore", "recoveryScore", "fatigueScore", "sleepScore", "stressScore"],
     },
     distribution: {
@@ -69,7 +70,6 @@ const state = {
   staffDrawerOpen: false,
   staffReturnFocus: null,
   staffModality: "all",
-  staffPeriod: "30",
   exportInFlight: false,
   selectedTrainingDate: null,
   physiotherapy: {
@@ -85,6 +85,19 @@ const state = {
       team: "",
       severity: "",
     },
+  },
+  attendance: {
+    items: [],
+    modalities: [],
+    teams: [],
+    summary: {},
+    sourceStatus: "unavailable",
+    failedTeams: 0,
+    updatedAt: "",
+    loaded: false,
+    loading: false,
+    error: "",
+    filters: { search: "", modality: "", team: "", match: "" },
   },
 };
 
@@ -112,6 +125,7 @@ const elements = {
   navTeamsButton: document.querySelector("#nav-teams-button"),
   navCalendarButton: document.querySelector("#nav-calendar-button"),
   navPhysiotherapyButton: document.querySelector("#nav-physiotherapy-button"),
+  navAttendanceButton: document.querySelector("#nav-attendance-button"),
   topbarEyebrow: document.querySelector("#topbar-eyebrow"),
   topbarTitle: document.querySelector("#topbar-title"),
   topbarActions: document.querySelector("#topbar-actions"),
@@ -128,6 +142,17 @@ const elements = {
   physiotherapyResultsCount: document.querySelector("#physiotherapy-results-count"),
   physiotherapyState: document.querySelector("#physiotherapy-state"),
   physiotherapyList: document.querySelector("#physiotherapy-list"),
+  attendanceWorkspace: document.querySelector("#attendance-workspace"),
+  attendanceUpdatedAt: document.querySelector("#attendance-updated-at"),
+  attendanceRefresh: document.querySelector("#attendance-refresh"),
+  attendanceSearch: document.querySelector("#attendance-search"),
+  attendanceModality: document.querySelector("#attendance-modality"),
+  attendanceTeam: document.querySelector("#attendance-team"),
+  attendanceMatch: document.querySelector("#attendance-match"),
+  attendanceStats: document.querySelector("#attendance-stats"),
+  attendanceResultsCount: document.querySelector("#attendance-results-count"),
+  attendanceState: document.querySelector("#attendance-state"),
+  attendanceList: document.querySelector("#attendance-list"),
   calendarTeamSelect: document.querySelector("#calendar-team-select"),
   trainingCalendarView: document.querySelector("#training-calendar-view"),
   template: document.querySelector("#athlete-card-template"),
@@ -166,10 +191,7 @@ const elements = {
   staffCloseButton: document.querySelector("#staff-close-button"),
   staffCloseBackdrop: document.querySelector("#staff-close-backdrop"),
   staffModalityFilter: document.querySelector("#staff-modality-filter"),
-  staffPeriodFilter: document.querySelector("#staff-period-filter"),
-  staffFatigueList: document.querySelector("#staff-fatigue-list"),
-  staffStressList: document.querySelector("#staff-stress-list"),
-  staffRecoveryList: document.querySelector("#staff-recovery-list"),
+  staffAttentionList: document.querySelector("#staff-attention-list"),
 };
 
 if (!DEPLOYMENT.reportsEnabled) {
@@ -583,16 +605,7 @@ function inferModalityLabel(category) {
 }
 
 function computeRecoveryFromEntry(entry) {
-  const values = [
-    Number.isFinite(entry.fatigueScore) ? 6 - entry.fatigueScore : null,
-    Number.isFinite(entry.stressScore) ? 6 - entry.stressScore : null,
-    Number.isFinite(entry.muscleScore) ? 6 - entry.muscleScore : null,
-    Number.isFinite(entry.sleepScore) ? 6 - entry.sleepScore : null,
-    Number.isFinite(entry.moodScore) ? entry.moodScore : null,
-    Number.isFinite(entry.painLevel) ? 6 - Math.min(5, entry.painLevel / 2) : null,
-  ];
-
-  return roundNumber(average(values));
+  return OlympicoAnalysis.computeRecoveryScore(entry);
 }
 
 function hydrateAthletes(athletes) {
@@ -746,26 +759,23 @@ function classifyPercentileBand(percentileValue) {
 }
 
 function buildAthleteLoadBaseline(athlete) {
-  const baselineSeries = buildRollingWindowValues(athlete.entries, "loadScore", 3);
-  const currentMovingAverage = getCurrentMovingAverage(athlete.entries, "loadScore", 3);
-  const ownPercentile = percentile(baselineSeries, currentMovingAverage);
-  const teamCurrentMovingAverages = getAthletesByTeam(athlete.category)
-    .map((teamAthlete) => getCurrentMovingAverage(teamAthlete.entries, "loadScore", 3))
-    .filter((value) => Number.isFinite(value));
-  const teamPercentile = percentile(teamCurrentMovingAverages, currentMovingAverage);
-
+  const personal = OlympicoAnalysis.personalBaseline(athlete, "loadScore");
+  const eligible = OlympicoAnalysis.getAnalysisEligibleAthletes(getAthletesByTeam(athlete.category), state.updatedAt);
+  const teamValues = eligible.map((item) => OlympicoAnalysis.personalBaseline(item, "loadScore").current).filter(Number.isFinite);
+  const teamPercentile = teamValues.length >= OlympicoAnalysis.ANALYSIS_CONFIG.minTeamPercentileN
+    ? percentile(teamValues, personal.current) : null;
   return {
-    currentMovingAverage,
-    ownPercentile,
-    ownBand: classifyPercentileBand(ownPercentile),
+    currentMovingAverage: personal.current,
+    ownPercentile: personal.percentile,
+    ownBand: classifyPercentileBand(personal.percentile),
     teamPercentile,
     teamBand: classifyPercentileBand(teamPercentile),
-    baselineCount: baselineSeries.length,
+    baselineCount: personal.baselineCount,
   };
 }
 
 function buildTeamLoadBaseline(teamName) {
-  const teamAthletes = getAthletesByTeam(teamName);
+  const teamAthletes = OlympicoAnalysis.getAnalysisEligibleAthletes(getAthletesByTeam(teamName), state.updatedAt, { days: OlympicoAnalysis.ANALYSIS_CONFIG.reportWeekDays });
   const currentMovingAverages = teamAthletes
     .map((athlete) => getCurrentMovingAverage(athlete.entries, "loadScore", 3))
     .filter((value) => Number.isFinite(value));
@@ -794,21 +804,23 @@ function buildTeamLoadBaseline(teamName) {
     .filter((value) => Number.isFinite(value));
 
   const teamBaselineSeries = buildRollingWindowValues(
-    teamAggregatedSeries.map((value) => ({ loadScore: value })),
+    teamAggregatedSeries.slice().reverse().map((value) => ({ loadScore: value })),
     "loadScore",
     3
   );
 
   const clubCurrentTeamAverages = state.categories
     .map((category) => {
-      const values = getAthletesByTeam(category)
+      const values = OlympicoAnalysis.getAnalysisEligibleAthletes(getAthletesByTeam(category), state.updatedAt, { days: OlympicoAnalysis.ANALYSIS_CONFIG.reportWeekDays })
         .map((athlete) => getCurrentMovingAverage(athlete.entries, "loadScore", 3))
         .filter((value) => Number.isFinite(value));
       return roundNumber(average(values), 2);
     })
     .filter((value) => Number.isFinite(value));
 
-  const teamHistoryPercentile = percentile(teamBaselineSeries, currentTeamAverage);
+  const historicalWindows = teamBaselineSeries.slice(0, -1);
+  const teamHistoryPercentile = historicalWindows.length >= OlympicoAnalysis.ANALYSIS_CONFIG.minPersonalBaselineWindows
+    ? percentile(historicalWindows, currentTeamAverage) : null;
   const clubPercentile = percentile(clubCurrentTeamAverages, currentTeamAverage);
 
   return {
@@ -817,7 +829,7 @@ function buildTeamLoadBaseline(teamName) {
     teamHistoryBand: classifyPercentileBand(teamHistoryPercentile),
     clubPercentile,
     clubBand: classifyPercentileBand(clubPercentile),
-    baselineCount: teamBaselineSeries.length,
+    baselineCount: historicalWindows.length,
   };
 }
 
@@ -831,15 +843,22 @@ function getAthletesByTeam(teamName) {
 }
 
 function getTeamDistribution(teamName, metricKey, period) {
-  return getAthletesByTeam(teamName)
+  return (period === "all" ? getAthletesByTeam(teamName) : OlympicoAnalysis.getAnalysisEligibleAthletes(getAthletesByTeam(teamName), state.updatedAt))
     .map((athlete) => aggregateAthlete(athlete, metricKey, period))
     .filter((value) => Number.isFinite(value));
 }
 
 function getBaseDistribution(metricKey, period) {
-  return state.athletes
+  return (period === "all" ? state.athletes : OlympicoAnalysis.getAnalysisEligibleAthletes(state.athletes, state.updatedAt))
     .map((athlete) => aggregateAthlete(athlete, metricKey, period))
     .filter((value) => Number.isFinite(value));
+}
+
+function getDescriptiveTeamPercentile(teamName, metricKey, period, athlete) {
+  const values = getTeamDistribution(teamName, metricKey, period);
+  if (values.length < OlympicoAnalysis.ANALYSIS_CONFIG.minTeamPercentileN ||
+      !OlympicoAnalysis.getAnalysisEligibleAthletes([athlete], state.updatedAt).length) return null;
+  return percentile(values, aggregateAthlete(athlete, metricKey, period));
 }
 
 function getTeamAggregate(teamName, metricKey, period) {
@@ -910,260 +929,32 @@ function filterAthletes() {
   });
 }
 
-function computeCardSummaryLegacy(athlete) {
-  const teamValues = getTeamDistribution(athlete.category, "loadScore", "latest");
-  const percentileValue = percentile(teamValues, athlete.latest.loadScore);
-
-  return {
-    teamPercentile: percentileValue,
-    text: `Carga ${formatRatio(athlete.latest.loadScore)} · recuperação ${formatRatio(
-      athlete.latest.recoveryScore
-    )}`,
-  };
-}
-
 function computeCardSummary(athlete) {
   const baseline = buildAthleteLoadBaseline(athlete);
-
+  const eligible = OlympicoAnalysis.getAnalysisEligibleAthletes([athlete], state.updatedAt).length > 0;
   return {
     teamPercentile: baseline.teamPercentile,
-    text: `MM3 ${formatRatio(baseline.currentMovingAverage)} · ${baseline.ownBand.toLowerCase()} pessoal`,
+    text: eligible
+      ? `Desgaste ${formatRatio(baseline.currentMovingAverage)} · Média das 3 últimas respostas · ${baseline.ownPercentile === null ? "Base histórica insuficiente" : `${baseline.ownBand.toLowerCase()} no padrão pessoal`}`
+      : "Sem check-in recente para comparação atual · histórico disponível",
   };
-}
-
-function computeStaffRanking(athletes, period) {
-  const current = athletes.map((athlete) => {
-    const recentEntries = filterEntriesByPeriod(athlete.entries, period);
-    const teamAthletes = athletes.filter((item) => item.category === athlete.category);
-    const loadBaseline = buildAthleteLoadBaseline({
-      ...athlete,
-      entries: recentEntries.length ? recentEntries : athlete.entries,
-    });
-    const sustainedFatigue = average(
-      recentEntries.map((entry) => entry.fatigueScore)
-    );
-    const sustainedStress = average(
-      recentEntries.map((entry) => entry.stressScore)
-    );
-    const sustainedRecovery = average(
-      recentEntries.map((entry) => entry.recoveryScore)
-    );
-    const fatigueHighCount = recentEntries.filter(
-      (entry) => Number.isFinite(entry.fatigueScore) && entry.fatigueScore >= 4
-    ).length;
-    const recoveryLowCount = recentEntries.filter(
-      (entry) => Number.isFinite(entry.recoveryScore) && entry.recoveryScore <= 2.5
-    ).length;
-
-    return {
-      ...athlete,
-      fatigueValue: sustainedFatigue,
-      stressValue: sustainedStress,
-      recoveryValue: sustainedRecovery,
-      fatigueHighCount,
-      recoveryLowCount,
-      recentWindow: recentEntries.length,
-      loadBaseline,
-      stressHighCount: recentEntries.filter(
-        (entry) => Number.isFinite(entry.stressScore) && entry.stressScore >= 4
-      ).length,
-    };
-  });
-
-  const fatigueMeans = current.map((item) => item.fatigueValue).filter(Number.isFinite);
-  const stressMeans = current.map((item) => item.stressValue).filter(Number.isFinite);
-  const recoveryMeans = current.map((item) => item.recoveryValue).filter(Number.isFinite);
-  const fatigueMean = average(fatigueMeans);
-  const stressMean = average(stressMeans);
-  const recoveryMean = average(recoveryMeans);
-  const fatigueSd = standardDeviation(fatigueMeans) || 1;
-  const stressSd = standardDeviation(stressMeans) || 1;
-  const recoverySd = standardDeviation(recoveryMeans) || 1;
-
-  current.forEach((item) => {
-    const fatigueZ = Number.isFinite(item.fatigueValue)
-      ? (item.fatigueValue - fatigueMean) / fatigueSd
-      : null;
-    const stressZ = Number.isFinite(item.stressValue)
-      ? (item.stressValue - stressMean) / stressSd
-      : null;
-    const recoveryZ = Number.isFinite(item.recoveryValue)
-      ? (recoveryMean - item.recoveryValue) / recoverySd
-      : null;
-
-    item.fatigueRiskScore = roundNumber(
-      (Number.isFinite(item.loadBaseline.teamPercentile) ? Math.max(0, (item.loadBaseline.teamPercentile - 65) / 20) : 0) +
-        (Number.isFinite(fatigueZ) ? fatigueZ * 0.45 : 0) +
-        (item.fatigueHighCount / Math.max(1, item.recentWindow)) * 1.35 +
-        (item.recoveryLowCount / Math.max(1, item.recentWindow)) * 0.7,
-      2
-    );
-    item.stressRiskScore = roundNumber(
-      (Number.isFinite(stressZ) ? stressZ * 0.65 : 0) +
-        (item.stressHighCount / Math.max(1, item.recentWindow)) * 1.2,
-      2
-    );
-    item.recoveryRiskScore = roundNumber(
-      (Number.isFinite(recoveryZ) ? recoveryZ * 0.55 : 0) +
-        (item.recoveryLowCount / Math.max(1, item.recentWindow)) * 1.4 +
-        (item.fatigueHighCount / Math.max(1, item.recentWindow)) * 0.55,
-      2
-    );
-  });
-
-  return {
-    fatigue: current
-      .filter(
-        (item) =>
-          Number.isFinite(item.fatigueValue) &&
-          Number.isFinite(item.loadBaseline.teamPercentile) &&
-          item.loadBaseline.teamPercentile >= 65
-      )
-      .sort((left, right) => right.fatigueRiskScore - left.fatigueRiskScore)
-      .slice(0, 8),
-    stress: current
-      .filter(
-        (item) =>
-          Number.isFinite(item.stressValue) &&
-          (item.stressHighCount >= 2 || item.stressRiskScore >= 1)
-      )
-      .sort((left, right) => right.stressRiskScore - left.stressRiskScore)
-      .slice(0, 8),
-    recovery: current
-      .filter(
-        (item) =>
-          Number.isFinite(item.recoveryValue) &&
-          (item.recoveryLowCount >= 2 || item.fatigueHighCount >= 2)
-      )
-      .sort((left, right) => right.recoveryRiskScore - left.recoveryRiskScore)
-      .slice(0, 8),
-  };
-}
-
-function getRiskLevel(score) {
-  if (!Number.isFinite(score)) {
-    return { label: "Sem base", tone: "low" };
-  }
-  if (score >= 1.9) {
-    return { label: "Crítico", tone: "high" };
-  }
-  if (score >= 1.1) {
-    return { label: "Atenção", tone: "medium" };
-  }
-  return { label: "Monitorar", tone: "low" };
-}
-
-function renderStaffList(container, items, valueFormatter, scoreGetter, noteGetter) {
-  if (!items.length) {
-    container.innerHTML = '<div class="staff-empty">Sem base suficiente.</div>';
-    return;
-  }
-
-  container.innerHTML = items
-    .map(
-      (athlete, index) => {
-        const score = scoreGetter(athlete);
-        const risk = getRiskLevel(score);
-        return `
-        <article class="staff-item">
-          <div>
-            <span class="staff-item__rank">#${index + 1}</span>
-            <h4>${athlete.name}</h4>
-            <p>${athlete.category} · janela ${athlete.recentWindow}</p>
-            <div class="staff-item__bar">
-              <span class="staff-item__bar-fill staff-item__bar-fill--${risk.tone}" style="width:${Math.max(
-                18,
-                Math.min(100, ((score || 0) / 2.6) * 100)
-              )}%"></span>
-            </div>
-            <small>${noteGetter(athlete)}</small>
-          </div>
-          <div class="staff-item__aside">
-            <strong>${valueFormatter(athlete)}</strong>
-            <span class="staff-item__risk staff-item__risk--${risk.tone}">${risk.label}</span>
-          </div>
-        </article>
-      `;
-      }
-    )
-    .join("");
-
-  container.querySelectorAll(".staff-item").forEach((item, index) => {
-    const meta = item.querySelector("p");
-    if (meta) {
-      meta.textContent = `${items[index].category} · ${items[index].recentWindow} respostas`;
-    }
-  });
-}
-
-function renderStaffDrawerLegacy() {
-  const filtered =
-    state.staffModality === "all"
-      ? state.athletes
-      : state.athletes.filter((athlete) => athlete.modalityId === state.staffModality);
-  const ranking = computeStaffRanking(filtered, state.staffPeriod);
-
-  renderStaffList(
-    elements.staffFatigueList,
-    ranking.fatigue,
-    (athlete) => formatRatio(athlete.fatigueValue),
-    (athlete) => athlete.fatigueRiskScore,
-    (athlete) =>
-      `${athlete.fatigueHighCount} fadiga alta + ${athlete.recoveryLowCount} recuperação baixa em ${formatPeriodLabel(
-        state.staffPeriod
-      )}`
-  );
-  renderStaffList(
-    elements.staffStressList,
-    ranking.stress,
-    (athlete) => formatRatio(athlete.stressValue),
-    (athlete) => athlete.stressRiskScore,
-    (athlete) =>
-      `${athlete.stressHighCount} respostas altas em ${formatPeriodLabel(state.staffPeriod)}`
-  );
-  renderStaffList(
-    elements.staffRecoveryList,
-    ranking.recovery,
-    (athlete) => formatRatio(athlete.recoveryValue),
-    (athlete) => athlete.recoveryRiskScore,
-    (athlete) =>
-      `${athlete.recoveryLowCount} recuperação baixa + ${athlete.fatigueHighCount} fadiga alta em ${formatPeriodLabel(
-        state.staffPeriod
-      )}`
-  );
 }
 
 function renderStaffDrawer() {
-  const filtered =
-    state.staffModality === "all"
-      ? state.athletes
-      : state.athletes.filter((athlete) => athlete.modalityId === state.staffModality);
-  const ranking = computeStaffRanking(filtered, state.staffPeriod);
-
-  renderStaffList(
-    elements.staffFatigueList,
-    ranking.fatigue,
-    (athlete) => formatRatio(athlete.fatigueValue),
-    (athlete) => athlete.fatigueRiskScore,
-    (athlete) =>
-      `Baseline ${formatPercentile(athlete.loadBaseline.teamPercentile)} · ${athlete.loadBaseline.teamBand} na equipe`
-  );
-  renderStaffList(
-    elements.staffStressList,
-    ranking.stress,
-    (athlete) => formatRatio(athlete.stressValue),
-    (athlete) => athlete.stressRiskScore,
-    (athlete) =>
-      `${athlete.stressHighCount} respostas altas em ${formatPeriodLabel(state.staffPeriod)}`
-  );
-  renderStaffList(
-    elements.staffRecoveryList,
-    ranking.recovery,
-    (athlete) => formatRatio(athlete.recoveryValue),
-    (athlete) => athlete.recoveryRiskScore,
-    (athlete) =>
-      `${athlete.recoveryLowCount} recuperação baixa + ${athlete.fatigueHighCount} fadiga alta`
-  );
+  const filtered = state.staffModality === "all"
+    ? state.athletes : state.athletes.filter((athlete) => athlete.modalityId === state.staffModality);
+  const items = OlympicoAnalysis.buildAttentionItems(filtered, state.updatedAt);
+  elements.staffAttentionList.innerHTML = items.length ? items.map((item) => `
+    <article class="staff-item staff-item--${item.tone}">
+      <div>
+        <h4>${escapeHtml(item.athlete.name)}</h4>
+        <p>${escapeHtml(item.athlete.category)} · ${item.dataQuality.recentCount} respostas recentes</p>
+        <strong>${escapeHtml(item.primaryReason)}</strong>
+        <small>${item.secondaryReasons.map(escapeHtml).join(" · ")}</small>
+        <small>${escapeHtml(item.dataQuality.note)}</small>
+      </div>
+      <span class="staff-item__risk staff-item__risk--${item.tone === "watch" ? "low" : item.tone}">${escapeHtml(item.level)}</span>
+    </article>`).join("") : '<div class="staff-empty">Nenhum atleta atende aos critérios de atenção na semana.</div>';
 }
 
 function openStaffDrawer() {
@@ -1219,6 +1010,15 @@ function handleStaffDrawerKeydown(event) {
   }
 }
 
+function getActivitySummaryNote() {
+  const recent = state.athletes.filter((athlete) => athlete.activityStatus === "active").length;
+  const inactive = state.athletes.filter((athlete) => athlete.activityStatus === "inactive").length;
+  const unverified = state.athletes.filter((athlete) => athlete.activityStatus === "unverified").length;
+  return unverified
+    ? `${recent} recentes Â· ${unverified} a confirmar`
+    : `${recent} ativos Â· ${inactive} inativos`;
+}
+
 function renderStatsLegacy() {
   const activeTeam = getActiveTeam();
   const teamAthletes = activeTeam ? getAthletesByTeam(activeTeam) : [];
@@ -1232,9 +1032,9 @@ function renderStatsLegacy() {
 
   const cards = [
     {
-      label: "Atletas monitorados",
+      label: "Atletas na base",
       value: state.athletes.length,
-      note: `${state.categories.length} equipes na base`,
+      note: getActivitySummaryNote(),
     },
     {
       label: "Equipe em foco",
@@ -1283,29 +1083,29 @@ function renderStats() {
 
   const cards = [
     {
-      label: "Atletas monitorados",
+      label: "Atletas na base",
       value: state.athletes.length,
-      note: `${state.categories.length} equipes na base`,
+      note: getActivitySummaryNote(),
     },
     {
       label: "Equipe em foco",
       value: teamAthletes.length || 0,
       note: teamBaseline
-        ? `${activeTeam} · MM3 ${formatRatio(teamBaseline.currentTeamAverage)}`
+        ? `${activeTeam} · Média 3 respostas ${formatRatio(teamBaseline.currentTeamAverage)}`
         : activeTeam || "Sem equipe selecionada",
     },
     {
-      label: "Baseline atleta",
-      value: athleteBaseline ? formatRatio(athleteBaseline.currentMovingAverage) : "Sem base",
+      label: "Padrão pessoal",
+      value: athleteBaseline && selectedAthlete && OlympicoAnalysis.getAnalysisEligibleAthletes([selectedAthlete], state.updatedAt).length ? formatRatio(athleteBaseline.currentMovingAverage) : "Sem dado atual",
       note: athleteBaseline
-        ? `${athleteBaseline.ownBand} · P ${formatPercentile(athleteBaseline.ownPercentile)}`
+        ? athleteBaseline.ownPercentile === null ? "Base histórica insuficiente" : `${athleteBaseline.ownBand} · P ${formatPercentile(athleteBaseline.ownPercentile)}`
         : "Selecione um atleta para leitura pessoal",
     },
     {
-      label: "Baseline equipe",
-      value: teamBaseline ? formatPercentile(teamBaseline.teamHistoryPercentile) : "Sem base",
+      label: "Contexto histórico da equipe",
+      value: teamBaseline ? teamBaseline.teamHistoryPercentile === null ? "Base histórica insuficiente" : formatPercentile(teamBaseline.teamHistoryPercentile) : "Sem base",
       note: teamBaseline
-        ? `${teamBaseline.teamHistoryBand} · clube ${formatPercentile(teamBaseline.clubPercentile)}`
+        ? `${teamBaseline.teamHistoryBand} · ${teamBaseline.baselineCount} janelas anteriores`
         : `Faixa global ${formatRatio(globalSummary.p25)} a ${formatRatio(globalSummary.p75)}`,
     },
   ];
@@ -1346,7 +1146,6 @@ function populateCategorySelects() {
       (item) => `<option value="${item.id}">${item.label}</option>`
     ).join("");
   elements.staffModalityFilter.value = state.staffModality;
-  elements.staffPeriodFilter.value = state.staffPeriod;
 }
 
 function renderExportButtons() {
@@ -1718,10 +1517,7 @@ function createDistributionChartForAthlete(athlete, teamName) {
         {
           label: "Percentil na equipe",
           data: metrics.map((metricKey) =>
-            percentile(
-              getTeamDistribution(teamName, metricKey, period),
-              aggregateAthlete(athlete, metricKey, period)
-            )
+            getDescriptiveTeamPercentile(teamName, metricKey, period, athlete)
           ),
           backgroundColor: "rgba(66, 70, 166, 0.92)",
           borderRadius: 999,
@@ -1989,193 +1785,29 @@ function renderDistributionReport(values, metricKey, scopeLabel) {
   `;
 }
 
-function renderHighlightsForAthleteLegacy(athlete, teamName) {
-  const period = state.controls.distribution.period;
-  const loadBaseline = buildAthleteLoadBaseline(athlete);
-  const teamLoadPercentile = percentile(
-    getTeamDistribution(teamName, "loadScore", period),
-    aggregateAthlete(athlete, "loadScore", period)
-  );
-  const baseLoadPercentile = percentile(
-    getBaseDistribution("loadScore", period),
-    aggregateAthlete(athlete, "loadScore", period)
-  );
-
+function renderHighlightsForAthlete(athlete) {
+  const baseline = buildAthleteLoadBaseline(athlete);
+  const eligible = OlympicoAnalysis.getAnalysisEligibleAthletes([athlete], state.updatedAt).length > 0;
   const cards = [
-    {
-      label: "Carga MM3",
-      value: formatRatio(loadBaseline.currentMovingAverage),
-      note: `${loadBaseline.ownBand} · percentil pessoal ${formatPercentile(loadBaseline.ownPercentile)}`,
-    },
-    {
-      label: "Recuperação",
-      value: formatRatio(aggregateAthlete(athlete, "recoveryScore", period)),
-      note: `Último ${formatRatio(athlete.latest.recoveryScore)}`,
-    },
-    {
-      label: "Percentil equipe",
-      value: formatPercentile(teamLoadPercentile),
-      note: `${getAthletesByTeam(teamName).length} atletas na equipe`,
-    },
-    {
-      label: "Percentil base",
-      value: formatPercentile(baseLoadPercentile),
-      note: athlete.modalityLabel,
-    },
+    { label: "Desgaste percebido", value: eligible ? formatRatio(baseline.currentMovingAverage) : "Sem dado atual", note: "Média das 3 últimas respostas" },
+    { label: "Recuperação", value: eligible ? formatRatio(athlete.latest.recoveryScore) : "Sem dado atual", note: "Último check-in" },
+    { label: "Último check-in", value: athlete.lastCheckIn || "Sem data", note: eligible ? "Elegível para leitura atual" : "Histórico disponível; fora da comparação atual" },
+    { label: "Padrão pessoal", value: eligible && baseline.ownPercentile !== null ? baseline.ownBand : "Base histórica insuficiente", note: `${baseline.baselineCount} janelas anteriores` },
   ];
-
-  elements.detailHighlights.innerHTML = cards
-    .map(
-      (card) => `
-        <article class="highlight">
-          <p>${card.label}</p>
-          <strong>${card.value}</strong>
-          <span>${card.note}</span>
-        </article>
-      `
-    )
-    .join("");
-}
-
-function renderHighlightsForAthlete(athlete, teamName) {
-  const period = state.controls.distribution.period;
-  const loadBaseline = buildAthleteLoadBaseline(athlete);
-  const teamLoadPercentile = percentile(
-    getTeamDistribution(teamName, "loadScore", period),
-    aggregateAthlete(athlete, "loadScore", period)
-  );
-  const baseLoadPercentile = percentile(
-    getBaseDistribution("loadScore", period),
-    aggregateAthlete(athlete, "loadScore", period)
-  );
-
-  const cards = [
-    {
-      label: "Carga MM3",
-      value: formatRatio(loadBaseline.currentMovingAverage),
-      note: `${loadBaseline.ownBand} · percentil pessoal ${formatPercentile(loadBaseline.ownPercentile)}`,
-    },
-    {
-      label: "Leitura na equipe",
-      value: formatPercentile(loadBaseline.teamPercentile),
-      note: `${loadBaseline.teamBand} na distribuicao atual da equipe`,
-    },
-    {
-      label: "Percentil equipe",
-      value: formatPercentile(teamLoadPercentile),
-      note: `${getAthletesByTeam(teamName).length} atletas · baseline ${loadBaseline.baselineCount} janelas`,
-    },
-    {
-      label: "Percentil base",
-      value: formatPercentile(baseLoadPercentile),
-      note: athlete.modalityLabel,
-    },
-  ];
-
-  elements.detailHighlights.innerHTML = cards
-    .map(
-      (card) => `
-        <article class="highlight">
-          <p>${card.label}</p>
-          <strong>${card.value}</strong>
-          <span>${card.note}</span>
-        </article>
-      `
-    )
-    .join("");
-}
-
-function renderHighlightsForTeamLegacy(teamName) {
-  const period = state.controls.distribution.period;
-  const teamLoadValues = getTeamDistribution(teamName, "loadScore", period);
-  const teamRecoveryValues = getTeamDistribution(teamName, "recoveryScore", period);
-  const teamSummary = buildDistributionSummary(teamLoadValues);
-  const teamMedianPercentile = percentile(
-    getAllTeamsAggregate("loadScore", period),
-    getTeamAggregate(teamName, "loadScore", period)
-  );
-
-  const cards = [
-    {
-      label: "Mediana da equipe",
-      value: formatRatio(teamSummary.median),
-      note: `Faixa ${formatRatio(teamSummary.p25)} a ${formatRatio(teamSummary.p75)}`,
-    },
-    {
-      label: "Recuperação média",
-      value: formatRatio(average(teamRecoveryValues)),
-      note: `${teamRecoveryValues.length} atletas válidos`,
-    },
-    {
-      label: "Percentil entre equipes",
-      value: formatPercentile(teamMedianPercentile),
-      note: "Comparativo por carga",
-    },
-    {
-      label: "Treinos marcados",
-      value: `${getTrainingDatesForTeam(teamName).filter((item) => item.checked).length}`,
-      note: "Dias com treino confirmado",
-    },
-  ];
-
-  elements.detailHighlights.innerHTML = cards
-    .map(
-      (card) => `
-        <article class="highlight">
-          <p>${card.label}</p>
-          <strong>${card.value}</strong>
-          <span>${card.note}</span>
-        </article>
-      `
-    )
-    .join("");
+  elements.detailHighlights.innerHTML = cards.map((card) => `<article class="highlight"><p>${escapeHtml(card.label)}</p><strong>${escapeHtml(card.value)}</strong><span>${escapeHtml(card.note)}</span></article>`).join("");
 }
 
 function renderHighlightsForTeam(teamName) {
-  const period = state.controls.distribution.period;
-  const teamLoadValues = getTeamDistribution(teamName, "loadScore", period);
-  const teamRecoveryValues = getTeamDistribution(teamName, "recoveryScore", period);
-  const teamSummary = buildDistributionSummary(teamLoadValues);
-  const teamMedianPercentile = percentile(
-    getAllTeamsAggregate("loadScore", period),
-    getTeamAggregate(teamName, "loadScore", period)
-  );
-  const loadBaseline = buildTeamLoadBaseline(teamName);
-
+  const athletes = getAthletesByTeam(teamName);
+  const weekly = OlympicoAnalysis.getAnalysisEligibleAthletes(athletes, state.updatedAt, { days: OlympicoAnalysis.ANALYSIS_CONFIG.reportWeekDays });
+  const baseline = buildTeamLoadBaseline(teamName);
   const cards = [
-    {
-      label: "Carga MM3 equipe",
-      value: formatRatio(loadBaseline.currentTeamAverage),
-      note: `${loadBaseline.teamHistoryBand} · percentil historico ${formatPercentile(loadBaseline.teamHistoryPercentile)}`,
-    },
-    {
-      label: "Recuperacao media",
-      value: formatRatio(average(teamRecoveryValues)),
-      note: `${teamRecoveryValues.length} atletas validos`,
-    },
-    {
-      label: "Percentil entre equipes",
-      value: formatPercentile(loadBaseline.clubPercentile),
-      note: `${loadBaseline.clubBand} no comparativo atual entre equipes`,
-    },
-    {
-      label: "Faixa central",
-      value: formatRatio(teamSummary.median),
-      note: `P25-P75 ${formatRatio(teamSummary.p25)} a ${formatRatio(teamSummary.p75)}`,
-    },
+    { label: "Desgaste percebido", value: formatRatio(average(weekly.map((athlete) => average(OlympicoAnalysis.recentEntries(athlete, state.updatedAt).map((entry) => entry.loadScore))))), note: "Média da semana · 7 dias" },
+    { label: "Recuperação", value: formatRatio(average(weekly.map((athlete) => average(OlympicoAnalysis.recentEntries(athlete, state.updatedAt).map((entry) => entry.recoveryScore))))), note: "Média da semana · 7 dias" },
+    { label: "Estresse", value: formatRatio(average(weekly.map((athlete) => average(OlympicoAnalysis.recentEntries(athlete, state.updatedAt).map((entry) => entry.stressScore))))), note: "Média da semana · 7 dias" },
+    { label: "Contexto histórico", value: baseline.teamHistoryPercentile === null ? "Base histórica insuficiente" : baseline.teamHistoryBand, note: `${baseline.baselineCount} janelas anteriores` },
   ];
-
-  elements.detailHighlights.innerHTML = cards
-    .map(
-      (card) => `
-        <article class="highlight">
-          <p>${card.label}</p>
-          <strong>${card.value}</strong>
-          <span>${card.note}</span>
-        </article>
-      `
-    )
-    .join("");
+  elements.detailHighlights.innerHTML = cards.map((card) => `<article class="highlight"><p>${escapeHtml(card.label)}</p><strong>${escapeHtml(card.value)}</strong><span>${escapeHtml(card.note)}</span></article>`).join("");
 }
 
 function getTrainingDatesForTeam(teamName) {
@@ -2631,16 +2263,171 @@ async function loadPhysiotherapy(force = false) {
   }
 }
 
+function getAttendanceModalityLabel(modalityId) {
+  return state.attendance.modalities.find((modality) => modality.id === modalityId)?.label || modalityId;
+}
+
+function populateAttendanceFilters() {
+  const attendance = state.attendance;
+  elements.attendanceModality.innerHTML = [
+    '<option value="">Todas</option>',
+    ...attendance.modalities.map(
+      (modality) => `<option value="${escapeHtml(modality.id)}">${escapeHtml(modality.label)}</option>`
+    ),
+  ].join("");
+  elements.attendanceModality.value = attendance.filters.modality;
+
+  const teams = [...new Set(
+    attendance.items
+      .filter((item) => !attendance.filters.modality || item.modalityId === attendance.filters.modality)
+      .map((item) => item.teamName)
+  )].sort((left, right) => left.localeCompare(right, "pt-BR"));
+  if (attendance.filters.team && !teams.includes(attendance.filters.team)) attendance.filters.team = "";
+  elements.attendanceTeam.innerHTML = [
+    '<option value="">Todas</option>',
+    ...teams.map((team) => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`),
+  ].join("");
+  elements.attendanceTeam.value = attendance.filters.team;
+}
+
+function getFilteredAttendanceItems() {
+  const { filters } = state.attendance;
+  const search = normalizeSearchValue(filters.search);
+  return state.attendance.items.filter((item) => {
+    if (filters.modality && item.modalityId !== filters.modality) return false;
+    if (filters.team && item.teamName !== filters.team) return false;
+    if (filters.match === "matched" && !["approved", "exact", "alias"].includes(item.matchStatus)) return false;
+    if (filters.match === "review" && ["approved", "exact", "alias"].includes(item.matchStatus)) return false;
+    return !search || normalizeSearchValue(
+      `${item.attendanceName} ${item.primaryAthleteName} ${item.teamName}`
+    ).includes(search);
+  });
+}
+
+function formatAttendancePercentage(value) {
+  return Number.isFinite(value) ? `${String(value).replace(".", ",")}%` : "Sem sessão";
+}
+
+function renderAttendance() {
+  const attendance = state.attendance;
+  elements.attendanceRefresh.disabled = attendance.loading;
+  elements.attendanceRefresh.textContent = attendance.loading ? "Atualizando..." : "Atualizar presenças";
+  elements.attendanceUpdatedAt.textContent = attendance.updatedAt || "Sem sessão disponível";
+
+  if (attendance.loading && !attendance.loaded) {
+    elements.attendanceState.textContent = "Carregando chamadas da preparação física...";
+    elements.attendanceState.className = "physio-state";
+    elements.attendanceList.innerHTML = "";
+    return;
+  }
+
+  const items = getFilteredAttendanceItems();
+  const matched = items.filter((item) => ["approved", "exact", "alias"].includes(item.matchStatus)).length;
+  const weeklyPresent = items.reduce((total, item) => total + (item.weeklyPresent || 0), 0);
+  const weeklyPossible = items.reduce((total, item) => total + (item.weeklySessions || 0), 0);
+  const cards = [
+    { label: "Atletas na chamada", value: items.length, note: "Com os filtros atuais", tone: "blue" },
+    { label: "Vinculados", value: matched, note: "Identidade segura", tone: "green" },
+    { label: "Revisão", value: items.length - matched, note: "Nomes sem vínculo seguro", tone: "yellow" },
+    {
+      label: "Presença semanal",
+      value: weeklyPossible ? formatAttendancePercentage(Math.round((weeklyPresent / weeklyPossible) * 1000) / 10) : "Sem base",
+      note: "Ultimos 7 dias",
+      tone: "purple",
+    },
+  ];
+  elements.attendanceStats.innerHTML = cards.map((card) => `
+    <article class="physio-stat physio-stat--${card.tone}">
+      <p>${card.label}</p><strong>${card.value}</strong><span>${card.note}</span>
+    </article>
+  `).join("");
+  elements.attendanceResultsCount.textContent = `${items.length} atleta${items.length === 1 ? "" : "s"} exibido${items.length === 1 ? "" : "s"}`;
+  elements.attendanceList.innerHTML = items.map((item) => {
+    const matchedItem = ["approved", "exact", "alias"].includes(item.matchStatus);
+    const matchLabel = item.matchStatus === "approved"
+      ? "Unificado"
+      : item.matchStatus === "exact"
+        ? "Exato"
+        : item.matchStatus === "alias"
+          ? "Nome abreviado"
+          : item.matchStatus === "suggested"
+            ? "Sugestão"
+            : "Sem cadastro";
+    return `
+      <tr>
+        <td class="attendance-table__athlete">
+          <strong>${escapeHtml(item.primaryAthleteName || item.attendanceName)}</strong>
+          ${item.primaryAthleteName && item.primaryAthleteName !== item.attendanceName ? `<span>Na chamada: ${escapeHtml(item.attendanceName)}</span>` : ""}
+        </td>
+        <td>${escapeHtml(item.teamName)}</td>
+        <td><strong>${escapeHtml(formatAttendancePercentage(item.weeklyPercentage))}</strong></td>
+        <td>${item.weeklyPresent || 0}/${item.weeklySessions || 0}</td>
+        <td><span class="attendance-match ${matchedItem ? "" : "attendance-match--review"}">${escapeHtml(matchLabel)}</span></td>
+      </tr>
+    `;
+  }).join("");
+
+  if (attendance.error) {
+    elements.attendanceState.textContent = attendance.error;
+    elements.attendanceState.className = "physio-state physio-state--error";
+  } else if (attendance.failedTeams) {
+    elements.attendanceState.textContent = `${attendance.failedTeams} categoria(s) não puderam ser lidas. Verifique o acesso das planilhas.`;
+    elements.attendanceState.className = "physio-state physio-state--error";
+  } else if (!items.length) {
+    elements.attendanceState.textContent = "Nenhum registro encontrado com os filtros atuais.";
+    elements.attendanceState.className = "physio-state";
+  } else {
+    elements.attendanceState.className = "physio-state hidden";
+  }
+}
+
+async function loadAttendance(force = false) {
+  if (state.attendance.loading || (state.attendance.loaded && !force)) {
+    renderAttendance();
+    return;
+  }
+  state.attendance.loading = true;
+  state.attendance.error = "";
+  renderAttendance();
+  try {
+    const response = await fetch(DEPLOYMENT.attendanceUrl, { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.details || payload.message || "Erro ao carregar presenças.");
+    state.attendance.items = payload.items || [];
+    state.attendance.modalities = payload.modalities || [];
+    state.attendance.teams = payload.teams || [];
+    state.attendance.summary = payload.summary || {};
+    state.attendance.sourceStatus = payload.sourceStatus || "unavailable";
+    state.attendance.failedTeams = payload.failedTeams || 0;
+    state.attendance.updatedAt = payload.updatedAt
+      ? new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(new Date(`${payload.updatedAt}T12:00:00Z`))
+      : "";
+    state.attendance.loaded = true;
+    populateAttendanceFilters();
+  } catch (error) {
+    state.attendance.error = error.message;
+  } finally {
+    state.attendance.loading = false;
+    renderAttendance();
+  }
+}
+
 function renderActiveWorkspace() {
   const isCalendar = state.activeSection === "calendar";
   const isPhysiotherapy = state.activeSection === "physiotherapy";
-  elements.panelWorkspace.classList.toggle("hidden", isCalendar || isPhysiotherapy);
+  const isAttendance = state.activeSection === "attendance";
+  elements.panelWorkspace.classList.toggle("hidden", isCalendar || isPhysiotherapy || isAttendance);
   elements.calendarWorkspace.classList.toggle("hidden", !isCalendar);
   elements.physiotherapyWorkspace.classList.toggle("hidden", !isPhysiotherapy);
-  elements.stats.classList.toggle("hidden", isPhysiotherapy);
-  elements.topbarActions.classList.toggle("hidden", isPhysiotherapy);
+  elements.attendanceWorkspace.classList.toggle("hidden", !isAttendance);
+  elements.stats.classList.toggle("hidden", isPhysiotherapy || isAttendance);
+  elements.topbarActions.classList.toggle("hidden", isPhysiotherapy || isAttendance);
   elements.topbarEyebrow.textContent = isPhysiotherapy ? "Núcleo de saúde" : "Centro de análise";
   elements.topbarTitle.textContent = isPhysiotherapy ? "Fisioterapia" : "Atletas e equipes";
+  if (isAttendance) {
+    elements.topbarEyebrow.textContent = "Núcleo de performance";
+    elements.topbarTitle.textContent = "Preparação física";
+  }
 
   if (isCalendar) {
     elements.calendarTeamSelect.value = getActiveTeam();
@@ -2652,6 +2439,9 @@ function renderActiveWorkspace() {
 
   if (isPhysiotherapy) {
     loadPhysiotherapy();
+  }
+  if (isAttendance) {
+    loadAttendance();
   }
 }
 
@@ -2848,6 +2638,7 @@ function setSidebarActive(target) {
     teams: elements.navTeamsButton,
     calendar: elements.navCalendarButton,
     physiotherapy: elements.navPhysiotherapyButton,
+    attendance: elements.navAttendanceButton,
   };
 
   Object.entries(mapping).forEach(([key, button]) => {
@@ -2886,16 +2677,23 @@ function renderAthletes() {
       card.classList.add("card--selected");
     }
 
-    card.querySelector(".card__category").textContent = athlete.category;
+    card.classList.toggle("card--inactive", athlete.activityStatus === "inactive");
+    card.classList.toggle("card--unverified", athlete.activityStatus === "unverified");
+    const activityLabel = athlete.activityStatus === "inactive"
+      ? " · INATIVO"
+      : athlete.activityStatus === "unverified"
+        ? " · A CONFIRMAR"
+        : "";
+    card.querySelector(".card__category").textContent = `${athlete.category}${activityLabel}`;
     card.querySelector(".card__name").textContent = athlete.name;
-    card.querySelector(".card__team-percentile").textContent = formatPercentile(summary.teamPercentile);
+    card.querySelector(".card__team-percentile").textContent = Number.isFinite(summary.teamPercentile) ? `Contexto da equipe: ${formatPercentile(summary.teamPercentile)}` : "Contexto da equipe: amostra reduzida";
     card.querySelector(".card__checkin").textContent = athlete.lastCheckIn || "Sem data";
     card.querySelector(".card__entries").textContent = `${athlete.totalEntries} respostas`;
     card.querySelector(".card__summary").textContent = summary.text;
     card.querySelector(".card__load").textContent = formatRatio(athlete.latest.loadScore);
+    card.querySelector(".card__recovery").textContent = formatRatio(athlete.latest.recoveryScore);
     card.querySelector(".card__pain").textContent = formatRatio(athlete.latest.painLevel, 10);
-    card.querySelector(".card__sleep").textContent = formatRatio(athlete.latest.sleepScore);
-    card.querySelector(".card__mood").textContent = formatRatio(athlete.latest.moodScore);
+    card.querySelector(".card__stress").textContent = formatRatio(athlete.latest.stressScore);
 
     const historyList = card.querySelector(".history__list");
     athlete.recentHistory.forEach((entry) => {
@@ -2903,7 +2701,7 @@ function renderAthletes() {
       const left = document.createElement("span");
       const right = document.createElement("span");
       left.textContent = entry.timestampDisplay || "Sem horário";
-      right.textContent = `Carga ${formatRatio(entry.loadScore)} · Recuperação ${formatRatio(
+      right.textContent = `Desgaste percebido ${formatRatio(entry.loadScore)} · Recuperação ${formatRatio(
         entry.recoveryScore
       )}`;
       item.append(left, right);
@@ -2969,6 +2767,8 @@ async function loadAthletes() {
     setSidebarActive(
       state.activeSection === "physiotherapy"
         ? "physiotherapy"
+        : state.activeSection === "attendance"
+          ? "attendance"
         : state.activeSection === "calendar"
           ? "calendar"
           : state.viewMode === "team"
@@ -3449,6 +3249,25 @@ elements.physiotherapySeverity.addEventListener("change", (event) => {
   renderPhysiotherapy();
 });
 
+elements.attendanceRefresh.addEventListener("click", () => loadAttendance(true));
+elements.attendanceSearch.addEventListener("input", (event) => {
+  state.attendance.filters.search = event.target.value;
+  renderAttendance();
+});
+elements.attendanceModality.addEventListener("change", (event) => {
+  state.attendance.filters.modality = event.target.value;
+  populateAttendanceFilters();
+  renderAttendance();
+});
+elements.attendanceTeam.addEventListener("change", (event) => {
+  state.attendance.filters.team = event.target.value;
+  renderAttendance();
+});
+elements.attendanceMatch.addEventListener("change", (event) => {
+  state.attendance.filters.match = event.target.value;
+  renderAttendance();
+});
+
 elements.staffOpenButton.addEventListener("click", () => {
   openStaffDrawer();
 });
@@ -3468,10 +3287,7 @@ elements.staffModalityFilter.addEventListener("change", (event) => {
   renderStaffDrawer();
 });
 
-elements.staffPeriodFilter.addEventListener("change", (event) => {
-  state.staffPeriod = event.target.value;
-  renderStaffDrawer();
-});
+
 
 elements.navPanelButton.addEventListener("click", () => {
   state.activeSection = "panel";
@@ -3514,6 +3330,13 @@ elements.navPhysiotherapyButton.addEventListener("click", () => {
   setSidebarActive("physiotherapy");
   renderActiveWorkspace();
   elements.physiotherapyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+elements.navAttendanceButton.addEventListener("click", () => {
+  state.activeSection = "attendance";
+  setSidebarActive("attendance");
+  renderActiveWorkspace();
+  elements.attendanceWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
 elements.calendarTeamSelect.addEventListener("change", (event) => {

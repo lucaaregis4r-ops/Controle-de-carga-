@@ -1,40 +1,28 @@
-# Kit de PDFs dos relatorios
+# Kit de PDFs dos relatórios
 
-## Atalho principal
+## Gerar
 
-Use:
+`./GERAR-KIT-RELATORIOS.sh` cria uma pasta datada em `output/reports/` com um PDF por categoria configurada. Ele atualiza os PDFs existentes para incluir as respostas mais recentes. Use `--resume` somente para retomar arquivos de uma execução interrompida sem regenerá-los. Requer Chrome ou Chromium instalado.
 
-`GERAR-KIT-RELATORIOS.cmd`
+Comandos úteis:
 
-O atalho gera automaticamente uma pasta com a data da planilha, por exemplo:
+```bash
+npm run reports:kit -- --dry-run
+npm run reports:kit -- --date=2026-08-07
+npm run reports:kit -- --force
+npm run reports:kit -- --resume
+npm run reports:kit -- --timeout-seconds=240 --retries=3
+```
 
-`output/reports/Relatórios 18 de junho`
+O relatório apresenta `Presença PF (7 dias)` com numerador e denominador. Quando a fonte de presença falha, o indicador mostra indisponibilidade.
 
-Dentro dela entram os PDFs:
+## Google Drive privado
 
-- `Relatório BASQUETE SUB14.pdf`
-- `Relatório BASQUETE SUB 15.pdf`
-- `Relatório BASQUETE SUB16.pdf`
-- `Relatório BASQUETE SUB17.pdf`
-- `Relatório Natação.pdf`
-- `Relatório Futsal.pdf`
-- um PDF para cada equipe do volei feminino
-- um PDF para cada equipe do volei masculino
+1. Ative a Google Drive API e crie credencial OAuth para aplicativo de computador no Google Cloud Console.
+2. Baixe o JSON da credencial.
+3. Execute `./CONFIGURAR-GOOGLE-DRIVE.sh /caminho/credencial.json` e autorize a conta.
+4. Execute `./GERAR-KIT-E-ENVIAR-DRIVE.sh` para gerar e enviar, ou `npm run reports:upload` para enviar o kit existente.
 
-## Comando pelo terminal
+O escopo usado é `drive.file`. Tokens ficam fora do projeto. O script não cria compartilhamento público. O arquivo `_drive-upload.json` em `output/` registra IDs e links para retomada.
 
-`npm run reports:kit`
-
-Para testar a lista sem gerar PDFs:
-
-`npm run reports:kit -- --dry-run`
-
-Para forcar uma data especifica no nome da pasta:
-
-`npm run reports:kit -- --date=2026-06-18`
-
-## Observacoes
-
-- O script sobe o servidor local temporariamente e usa a API `/api/export-pdf`.
-- O Edge/Chrome em modo automatico pode demorar alguns segundos para finalizar cada PDF.
-- `NATAÇÃO JUV` e `NATAÇÃO JUVENIL` sao tratadas como a mesma equipe.
+Para preparar mensagens e controle de envio manual, use `./PREPARAR-ENVIO-RELATORIOS.sh /caminho/para/pasta-de-PDFs`.
