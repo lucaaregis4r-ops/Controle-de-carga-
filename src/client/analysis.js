@@ -18,6 +18,34 @@
     return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
   };
   const rounded = (value) => Number.isFinite(value) ? Math.round(value * 100) / 100 : null;
+
+  const standardDeviation = (values) => {
+    const valid = values.filter(Number.isFinite);
+    if (valid.length < 2) return null;
+    const m = mean(valid);
+    const variance = valid.reduce((acc, val) => acc + Math.pow(val - m, 2), 0) / (valid.length - 1);
+    return Math.sqrt(variance);
+  };
+
+  const computeZScore = (value, meanValue, stdDev) => {
+    if (!Number.isFinite(value) || !Number.isFinite(meanValue) || !Number.isFinite(stdDev) || stdDev === 0) return null;
+    return rounded((value - meanValue) / stdDev);
+  };
+
+  function calculateACWR(entries, metricKey) {
+    if (!entries || entries.length < 28) return null; // Precisamos de pelo menos 4 semanas (28 dias de check-ins potenciais)
+    // Para simplificar: aguda = últimos 7 check-ins (assumindo 1 por dia), cronica = últimos 28
+    const acuteValues = entries.slice(0, 7).map(e => e[metricKey]).filter(Number.isFinite);
+    const chronicValues = entries.slice(0, 28).map(e => e[metricKey]).filter(Number.isFinite);
+
+    if (acuteValues.length === 0 || chronicValues.length === 0) return null;
+
+    const acuteLoad = acuteValues.reduce((a, b) => a + b, 0);
+    const chronicLoad = chronicValues.reduce((a, b) => a + b, 0) / 4; // média de carga semanal nas últimas 4 semanas
+
+    if (chronicLoad === 0) return null;
+    return rounded(acuteLoad / chronicLoad);
+  }
   const withinDays = (entry, updatedAtIso, days) => {
     const date = Date.parse(entry?.timestampIso || "");
     const anchor = Date.parse(updatedAtIso || "");
@@ -64,10 +92,16 @@
     }
     // The current window is never part of its own reference distribution.
     if (windows.length) windows.pop();
+
+    const stdDev = windows.length ? rounded(standardDeviation(windows)) : null;
+    const zScore = windows.length && stdDev ? computeZScore(current, mean(windows), stdDev) : null;
+
     return {
       current,
       baselineCount: windows.length,
       percentile: windows.length >= ANALYSIS_CONFIG.minPersonalBaselineWindows ? percentile(windows, current) : null,
+      stdDev,
+      zScore
     };
   }
 
@@ -85,6 +119,7 @@
       const recoveryBaseline = personalBaseline(athlete, "recoveryScore");
       const stressBaseline = personalBaseline(athlete, "stressScore");
       const persistent = (key, predicate) => entries.length === 3 && entries.filter((entry) => predicate(entry[key])).length >= 2;
+      const acwr = calculateACWR(athlete.entries, "loadScore");
       const signals = [];
       const add = (domain, reason, strength, absolute = 0, persistence = false) => signals.push({ domain, reason, strength, absolute, persistence });
       if (Number.isFinite(latest.painLevel) && latest.painLevel >= 6) add("pain", `Dor ${latest.painLevel}/10`, 3, latest.painLevel);
@@ -92,9 +127,20 @@
       if (persistent("fatigueScore", (value) => Number.isFinite(value) && value >= 4)) add("fatigue", "Fadiga alta em 2 das 3 respostas", 2, 0, true);
       if (persistent("stressScore", (value) => Number.isFinite(value) && value >= 4)) add("stress", "Estresse alto em 2 das 3 respostas", 2, 0, true);
       if (persistent("recoveryScore", (value) => Number.isFinite(value) && value <= 2.8)) add("recovery", "Recuperação baixa em 2 das 3 respostas", 2, 0, true);
-      if (baseline.percentile >= 85 && baseline.current >= 3) add("load", "Desgaste acima do padrão pessoal", 1);
-      if (recoveryBaseline.percentile !== null && recoveryBaseline.percentile <= 15 && Number.isFinite(recoveryBaseline.current)) add("recovery", "Recuperação abaixo do padrão pessoal", 1);
-      if (stressBaseline.percentile >= 85 && stressBaseline.current >= 3) add("stress", "Estresse acima do padrão pessoal", 1);
+
+      // Z-Score based alerts
+      if (baseline.zScore !== null && baseline.zScore >= 1.5 && baseline.current >= 3) add("load", "Desgaste percebido subiu rápido (Z-Score >= 1.5)", 2);
+      else if (baseline.percentile >= 85 && baseline.current >= 3) add("load", "Desgaste acima do padrão pessoal", 1);
+
+      if (recoveryBaseline.zScore !== null && recoveryBaseline.zScore <= -1.5) add("recovery", "Recuperação despencou (Z-Score <= -1.5)", 2);
+      else if (recoveryBaseline.percentile !== null && recoveryBaseline.percentile <= 15 && Number.isFinite(recoveryBaseline.current)) add("recovery", "Recuperação abaixo do padrão pessoal", 1);
+
+      if (stressBaseline.zScore !== null && stressBaseline.zScore >= 1.5) add("stress", "Estresse subiu rápido (Z-Score >= 1.5)", 2);
+      else if (stressBaseline.percentile >= 85 && stressBaseline.current >= 3) add("stress", "Estresse acima do padrão pessoal", 1);
+
+      if (acwr !== null && acwr > 1.5) add("load", `Razão Aguda:Crônica (ACWR) em zona de risco (${acwr})`, 3, acwr);
+      else if (acwr !== null && acwr < 0.8) add("load", `Razão Aguda:Crônica (ACWR) em zona de destreinamento (${acwr})`, 1, acwr);
+
       if (!signals.length) return null;
       signals.sort((a, b) => b.strength - a.strength || b.absolute - a.absolute || Number(b.persistence) - Number(a.persistence));
       const domains = new Set(signals.map((signal) => signal.domain));
@@ -121,5 +167,5 @@
       a.athlete.name.localeCompare(b.athlete.name, "pt-BR"));
   }
 
-  return { ANALYSIS_CONFIG, computeRecoveryScore, getAnalysisEligibleAthletes, recentEntries, personalBaseline, buildAttentionItems };
+  return { ANALYSIS_CONFIG, computeRecoveryScore, getAnalysisEligibleAthletes, recentEntries, personalBaseline, buildAttentionItems, standardDeviation, computeZScore, calculateACWR };
 });
