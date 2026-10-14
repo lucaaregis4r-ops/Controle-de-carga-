@@ -2000,12 +2000,12 @@ function getCoachActionBadge(item) {
   const pain = item.metrics && item.metrics.pain;
   const stress = item.metrics && item.metrics.stress;
   if (item.tone === "high" || (Number.isFinite(pain) && pain >= 6)) {
-    return `<span class="coach-action coach-action--danger">Reduzir vol. 20-30% · Avaliar Fisio</span>`;
+    return `<span class="coach-action coach-action--danger">Sobrecarga · Atenção</span>`;
   }
   if (item.tone === "medium" || (Number.isFinite(stress) && stress >= 3.8)) {
-    return `<span class="coach-action coach-action--warning">Dosar intensidade · Monitorar</span>`;
+    return `<span class="coach-action coach-action--warning">Fadiga Elevada</span>`;
   }
-  return `<span class="coach-action coach-action--ok">Manter rotina · Acompanhar</span>`;
+  return `<span class="coach-action coach-action--ok">Prontidão Estável</span>`;
 }
 
 function buildTeamReportSection(
@@ -2175,8 +2175,8 @@ function buildTeamReportSection(
           <div class="report-summary-list">${buildWeeklyInterpretationItems(baseline, recoveryMean, stressMean, attentionItems).slice(0, 4).map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div>
         </article>
       </section>
-      <article class="report-panel report-attention-table"><div class="report-panel__head"><p>Atletas em atenção & Diretriz Prática</p><span>${attentionItems.length} com critérios na semana</span></div>
-        <table><thead><tr><th>Atleta</th><th>Situação</th><th>Desgaste</th><th>Recuperação</th><th>Estresse</th><th>Principal sinal</th><th>Conduta do Treinador</th></tr></thead><tbody>
+      <article class="report-panel report-attention-table"><div class="report-panel__head"><p>Atletas em atenção</p><span>${attentionItems.length} com critérios na semana</span></div>
+        <table><thead><tr><th>Atleta</th><th>Situação</th><th>Desgaste</th><th>Recuperação</th><th>Estresse</th><th>Principal sinal</th><th>Prontidão</th></tr></thead><tbody>
         ${visibleAttention.length ? visibleAttention.map((item) => `<tr><td>${escapeHtml(item.athlete.name)}</td><td><span class="attention-badge attention-badge--${item.tone}">${escapeHtml(item.level)}</span></td><td>${escapeHtml(formatRatio(item.metrics.load))}</td><td>${escapeHtml(formatRatio(item.metrics.recovery))}</td><td>${escapeHtml(formatRatio(item.metrics.stress))}</td><td>${escapeHtml(item.primaryReason)}</td><td>${getCoachActionBadge(item)}</td></tr>`).join("") : '<tr><td colspan="7">Nenhum atleta atende aos critérios nesta semana.</td></tr>'}
         </tbody></table>${attentionItems.length > 5 ? `<small>+ ${attentionItems.length - 5} atleta(s) em acompanhamento no dashboard.</small>` : ""}
       </article>
@@ -2189,7 +2189,7 @@ function buildTeamReportSection(
         <article class="report-panel"><div class="report-panel__head"><p>Cobertura dos dados</p></div><div class="report-method-list"><span>${weeklyCount} de ${teamAthletes.length} atletas com check-in na semana</span><span>${eligible.length} atletas com check-in nos últimos 20 dias</span><span>Fisioterapia: ${physioItems.length} registro(s) · Psicologia: ${psychologyItems.length} registro(s)</span><span>Presença PF: ${escapeHtml(getReportAttendanceNote(attendanceSummary))}</span></div></article>
       </section>
       <article class="report-panel report-methodology"><div class="report-panel__head"><p>Nota metodológica</p></div><div class="report-method-list">
-        <span><strong>Diretrizes da Comissão Técnica:</strong> 🟢 Verde (ACWR 0.8–1.3, Hooper &lt; 12): 100% liberado · 🟡 Amarelo (ACWR 1.3–1.5, Hooper 12–15): Dosar saltos/impacto · 🔴 Vermelho (ACWR &ge; 1.5, Hooper &ge; 16, Dor &ge; 6): Reduzir volume 20–30%, avaliar Fisioterapia.</span>
+        <span><strong>Zonas de Referência da Carga:</strong> 🟢 Faixa Ótima (ACWR 0.8–1.3, Hooper &lt; 12): Lastro crônico consolidado e alta capacidade adaptativa · 🟡 Faixa de Atenção (ACWR 1.3–1.5, Hooper 12–15): Elevação de fadiga residual ou subida rápida de carga · 🔴 Faixa de Sobrecarga (ACWR &ge; 1.5, Hooper &ge; 16, Dor &ge; 6): Demanda aguda desproporcional à base crônica (vulnerabilidade tecidual elevada).</span>
         <span><strong>ACWR Exponencial (EWMA):</strong> Razão Aguda:Crônica ponderada por decaimento exponencial (&lambda; agudo=0.25, crônico=0.07). Williams et al. (2017), <em>Br J Sports Med</em>; Gabbett, T. J. (2016), <em>Br J Sports Med</em>.</span>
         <span><strong>Índice Hooper (4–20):</strong> Somatória de Fadiga, Sono, Dor Muscular e Estresse. Saw et al. (2016), <em>Br J Sports Med</em>; Hooper & Mackinnon (1995), <em>Sports Med</em>.</span>
         <span><strong>Z-Score Intra-individual:</strong> Monitora o desvio em relação ao histórico próprio (&ge; 1.8&sigma;), identificando picos agudos sem penalizar atletas naturalmente tolerantes.</span>

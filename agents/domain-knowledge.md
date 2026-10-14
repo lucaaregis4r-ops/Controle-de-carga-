@@ -65,3 +65,13 @@ $$Z = \frac{\text{Valor Atual} - \mu_{\text{baseline}}}{\sigma_{\text{baseline}}
 - **$Z > +1.5$:** Aumento substancial e rápido no desgaste/fadiga individual.
 - **$Z > +2.0$:** Alerta crítico de pico fora de mais de 95% do padrão histórico pessoal.
 - **$Z < -1.5$:** Desvio favorável acentuado (recuperação excepcional ou retorno).
+
+---
+
+## 5. Postura de Comunicação com a Comissão Técnica (Treinadores)
+
+- **Soberania do Treinador:** Treinadores são os responsáveis finais pelo planejamento técnico-tático e minutagem dos atletas.
+- **Linguagem Descritiva, Não Prescritiva:** Nunca utilize linguagem imperativa ou ordens diretivas ("Reduzir volume", "Conduta do Treinador", "Liberado 100%"). Apresente as métricas como **indicadores de prontidão**, **níveis de tolerância à carga** e **respostas fisiológicas contextuais**.
+- **Terminologia Recomendada:**
+  - Em vez de "Conduta", use "Prontidão", "Sinalização" ou "Classificação Fisiológica".
+  - Em vez de ordens de corte, use "Faixa de Sobrecarga Aguda", "Alerta de Tolerância" ou "Vulnerabilidade Tecidual Acentuada".
