@@ -106,6 +106,9 @@
           <button class="sidebar__link" id="nav-calendar-button" type="button" aria-controls="calendar-workspace">
             Calendário
           </button>
+          <button class="sidebar__link" id="nav-risk-button" type="button" aria-controls="risk-workspace">
+            Radar de Risco
+          </button>
           <button class="sidebar__link" id="nav-science-button" type="button" aria-controls="science-workspace">
             Ciência & Metodologia
           </button>
@@ -134,6 +137,9 @@
           </div>
 
           <div class="topbar__actions" id="topbar-actions">
+            <button class="button button--ghost topbar__risk-btn" id="quick-risk-button" type="button" title="Ver atletas com alta probabilidade de sobrecarga e risco agudo">
+              ⚠️ Radar de Risco
+            </button>
             <button class="button button--ghost topbar__science-btn" id="quick-science-button" type="button" title="Ver fundamentos científicos do ACWR e Índice Hooper">
               📚 Metodologia Científica
             </button>
@@ -169,6 +175,19 @@
           <section class="stats" id="stats" aria-label="Indicadores gerais"></section>
 
           <section class="results" id="panel-workspace">
+            <aside class="risk-banner hidden" id="risk-banner" role="status" aria-label="Alerta de sobrecarga aguda">
+              <div class="risk-banner__content">
+                <span class="risk-banner__icon">⚠️</span>
+                <div>
+                  <strong id="risk-banner-title">Radar de Sobrecarga</strong>
+                  <p id="risk-banner-desc">Existem atletas em faixa de alta probabilidade de sobrecarga aguda.</p>
+                </div>
+              </div>
+              <button class="button button--secondary" id="risk-banner-action" type="button">
+                Ver Casos de Risco
+              </button>
+            </aside>
+
             <div class="results__bar">
               <p id="results-count" aria-live="polite">Carregando atletas...</p>
             </div>
@@ -691,6 +710,77 @@
                 </article>
               </section>
             </article>
+          </section>
+
+          <section class="risk-workspace hidden" id="risk-workspace" aria-label="Radar de Sobrecarga e Risco de Lesão">
+            <article class="physio-hero risk-hero">
+              <div>
+                <p class="chart-card__eyebrow">Salvaguarda e Prevenção Fisiológica</p>
+                <h3>Radar de Sobrecarga & Risco de Lesão</h3>
+                <p>
+                  Identificação precoce de atletas com alta probabilidade de estresse agudo excessivo e lesão, calculada a partir dos dados empíricos da base do Olympico Club (salto agudo de carga Z-Score &ge; +1.89&sigma;, elevação prévia do Hooper &ge; 13/20 e dor muscular tardia DOMS).
+                </p>
+                <div class="risk-hero__badges">
+                  <span class="badge badge--pill">🎯 Calibrado em 55 Casos Reais</span>
+                  <span class="badge badge--pill">⚖️ Z-Score Intra-individual</span>
+                  <span class="badge badge--pill">🛡️ Apoio Descritivo ao Treinador</span>
+                </div>
+              </div>
+              <div class="physio-hero__status">
+                <span>Último check-in analisado</span>
+                <strong id="risk-updated-at">Carregando...</strong>
+                <button class="physio-refresh" id="risk-refresh-btn" type="button">
+                  Recalcular Risco
+                </button>
+              </div>
+            </article>
+
+            <!-- Cards de Métricas do Radar -->
+            <section class="physio-stats risk-stats" id="risk-stats" aria-label="Indicadores do Radar"></section>
+
+            <!-- Filtros do Radar -->
+            <div class="physio-filters risk-filters" aria-label="Filtros do Radar de Risco">
+              <label class="field">
+                <span>Buscar atleta</span>
+                <input id="risk-search" type="search" placeholder="Nome do atleta..." autocomplete="off" />
+              </label>
+
+              <label class="field">
+                <span>Modalidade</span>
+                <select id="risk-modality-filter">
+                  <option value="">Todas</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Equipe / Categoria</span>
+                <select id="risk-category-filter">
+                  <option value="">Todas as equipes</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Faixa de Probabilidade</span>
+                <select id="risk-level-filter">
+                  <option value="high" selected>🔴 Alta Probabilidade</option>
+                  <option value="moderate">🟡 Atenção Moderada</option>
+                  <option value="all">Todas as faixas</option>
+                </select>
+              </label>
+            </div>
+
+            <!-- Barra de Contagem -->
+            <div class="physio-results__bar">
+              <p id="risk-results-count" aria-live="polite">Calculando probabilidades...</p>
+              <span>Suporte descritivo · Não prescritivo</span>
+            </div>
+
+            <!-- Grade de Cartões de Atletas com Alta Probabilidade -->
+            <div class="risk-cards-grid" id="risk-cards-grid"></div>
+
+            <div class="empty hidden" id="risk-empty-state">
+              Nenhum atleta encontrado nesta faixa com os filtros selecionados.
+            </div>
           </section>
 
         </main>

@@ -149,3 +149,36 @@ test("calcula EWMA e ACWR com janela adaptativa e zonas de risco", () => {
   assert.equal(Analysis.getACWRZone(1.6).zone, "danger");
 });
 
+test("calcula risco de lesao e sobrecarga aguda com identificacao de alta probabilidade", () => {
+  // Atleta com carga normal e sem dor
+  const stableEntries = Array.from({ length: 10 }, (_, i) =>
+    entry(String(25 - i).padStart(2, "0"), { loadScore: 2, muscleScore: 2, fatigueScore: 2, stressScore: 2, painLevel: 0 })
+  );
+  const stableAth = athlete("Estável", stableEntries);
+  const stableRisk = Analysis.calculateInjuryRisk(stableAth, now);
+  assert.equal(stableRisk.probability, "Baixa");
+  assert.equal(stableRisk.level, "low");
+
+  // Atleta em crise aguda no momento t=0 (pico agudo de carga, Hooper e dor)
+  const acuteEntries = [
+    entry("25", { loadScore: 5, muscleScore: 5, fatigueScore: 5, stressScore: 4, painLevel: 6 }),
+    ...Array.from({ length: 9 }, (_, i) =>
+      entry(String(24 - i).padStart(2, "0"), { loadScore: 2, muscleScore: 2, fatigueScore: 2, stressScore: 2, painLevel: 0 })
+    ),
+  ];
+  const acuteAth = athlete("Crítico", acuteEntries);
+  const acuteRisk = Analysis.calculateInjuryRisk(acuteAth, now);
+  assert.equal(acuteRisk.probability, "Alta");
+  assert.equal(acuteRisk.level, "high");
+  assert.ok(acuteRisk.probabilityPercent >= 70);
+  assert.ok(acuteRisk.triggers.length >= 3);
+  assert.ok(acuteRisk.triggers.some((t) => t.domain === "Carga"));
+  assert.ok(acuteRisk.triggers.some((t) => t.domain === "DOMS"));
+  assert.ok(acuteRisk.triggers.some((t) => t.domain === "Dor"));
+
+  const list = Analysis.buildRiskAssessmentList([stableAth, acuteAth], now);
+  assert.equal(list.length, 2);
+  assert.equal(list[0].athlete.name, "Crítico");
+  assert.equal(list[0].probability, "Alta");
+});
+

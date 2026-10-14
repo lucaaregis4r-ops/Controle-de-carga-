@@ -102,6 +102,15 @@ const state = {
     error: "",
     filters: { search: "", modality: "", team: "", match: "" },
   },
+  risk: {
+    items: [],
+    filters: {
+      search: "",
+      modality: "",
+      category: "",
+      level: "high",
+    },
+  },
 };
 
 const elements = {
@@ -129,12 +138,29 @@ const elements = {
   navCalendarButton: document.querySelector("#nav-calendar-button"),
   navPhysiotherapyButton: document.querySelector("#nav-physiotherapy-button"),
   navAttendanceButton: document.querySelector("#nav-attendance-button"),
+  navRiskButton: document.querySelector("#nav-risk-button"),
+  quickRiskButton: document.querySelector("#quick-risk-button"),
   navScienceButton: document.querySelector("#nav-science-button"),
   quickScienceButton: document.querySelector("#quick-science-button"),
   topbarEyebrow: document.querySelector("#topbar-eyebrow"),
   topbarTitle: document.querySelector("#topbar-title"),
   topbarActions: document.querySelector("#topbar-actions"),
   panelWorkspace: document.querySelector("#panel-workspace"),
+  riskBanner: document.querySelector("#risk-banner"),
+  riskBannerTitle: document.querySelector("#risk-banner-title"),
+  riskBannerDesc: document.querySelector("#risk-banner-desc"),
+  riskBannerAction: document.querySelector("#risk-banner-action"),
+  riskWorkspace: document.querySelector("#risk-workspace"),
+  riskUpdatedAt: document.querySelector("#risk-updated-at"),
+  riskRefreshBtn: document.querySelector("#risk-refresh-btn"),
+  riskStats: document.querySelector("#risk-stats"),
+  riskSearch: document.querySelector("#risk-search"),
+  riskModalityFilter: document.querySelector("#risk-modality-filter"),
+  riskCategoryFilter: document.querySelector("#risk-category-filter"),
+  riskLevelFilter: document.querySelector("#risk-level-filter"),
+  riskResultsCount: document.querySelector("#risk-results-count"),
+  riskCardsGrid: document.querySelector("#risk-cards-grid"),
+  riskEmptyState: document.querySelector("#risk-empty-state"),
   calendarWorkspace: document.querySelector("#calendar-workspace"),
   physiotherapyWorkspace: document.querySelector("#physiotherapy-workspace"),
   scienceWorkspace: document.querySelector("#science-workspace"),
@@ -2608,21 +2634,266 @@ async function loadAttendance(force = false) {
   }
 }
 
+function populateRiskFilters() {
+  if (!elements.riskModalityFilter || !elements.riskCategoryFilter) return;
+
+  const currentModality = state.risk.filters.modality;
+  const currentCategory = state.risk.filters.category;
+
+  const modalities = Array.from(new Set(state.athletes.map((a) => a.modalityId).filter(Boolean))).sort();
+  const modalityOptions = ['<option value="">Todas</option>']
+    .concat(modalities.map((m) => `<option value="${escapeHtml(m)}" ${m === currentModality ? "selected" : ""}>${escapeHtml(m.toUpperCase())}</option>`))
+    .join("");
+  elements.riskModalityFilter.innerHTML = modalityOptions;
+
+  const categories = Array.from(new Set(state.athletes.map((a) => a.category).filter(Boolean))).sort();
+  const categoryOptions = ['<option value="">Todas as equipes</option>']
+    .concat(categories.map((c) => `<option value="${escapeHtml(c)}" ${c === currentCategory ? "selected" : ""}>${escapeHtml(c)}</option>`))
+    .join("");
+  elements.riskCategoryFilter.innerHTML = categoryOptions;
+}
+
+function renderRiskStats(allAssessments) {
+  if (!elements.riskStats) return;
+  const highItems = allAssessments.filter((item) => item.level === "high");
+  const modItems = allAssessments.filter((item) => item.level === "moderate");
+
+  const highWithZ = highItems.filter((item) => Number.isFinite(item.metrics.zScore));
+  const avgZ = highWithZ.length
+    ? roundNumber(highWithZ.reduce((acc, item) => acc + item.metrics.zScore, 0) / highWithZ.length, 2)
+    : 0;
+
+  const triggerCounts = {};
+  highItems.forEach((item) => {
+    (item.triggers || []).forEach((t) => {
+      triggerCounts[t.domain] = (triggerCounts[t.domain] || 0) + 1;
+    });
+  });
+  let topDomain = "Carga";
+  let maxCount = 0;
+  Object.entries(triggerCounts).forEach(([domain, count]) => {
+    if (count > maxCount) {
+      maxCount = count;
+      topDomain = domain;
+    }
+  });
+
+  elements.riskStats.innerHTML = `
+    <article class="physio-stat" style="border-left: 4px solid #ff5b6b;">
+      <span>🔴 Alta Probabilidade</span>
+      <strong style="color: #ffbac2;">${highItems.length} ${highItems.length === 1 ? "atleta" : "atletas"}</strong>
+      <p>Pico agudo de carga Z ≥ +1.89σ ou Hooper crítico</p>
+    </article>
+    <article class="physio-stat" style="border-left: 4px solid #ffbf55;">
+      <span>🟡 Atenção Moderada</span>
+      <strong style="color: #ffe2aa;">${modItems.length} ${modItems.length === 1 ? "atleta" : "atletas"}</strong>
+      <p>Fadiga, estresse ou carga em ascensão</p>
+    </article>
+    <article class="physio-stat">
+      <span>📈 Z-Score Médio (Alta)</span>
+      <strong style="color: var(--white);">${avgZ > 0 ? "+" + avgZ : avgZ}σ</strong>
+      <p>Desvio acima da média individual habitual</p>
+    </article>
+    <article class="physio-stat">
+      <span>⚡ Gatilho Frequente</span>
+      <strong style="color: #a7f4cf;">${escapeHtml(topDomain)} (${maxCount} ocorrências)</strong>
+      <p>Variável que mais disparou o alerta agudo</p>
+    </article>
+  `;
+}
+
+function renderRiskCards(items) {
+  if (!elements.riskCardsGrid) return;
+  elements.riskCardsGrid.innerHTML = "";
+
+  if (!items.length) {
+    elements.riskCardsGrid.classList.add("hidden");
+    elements.riskEmptyState.classList.remove("hidden");
+    return;
+  }
+
+  elements.riskCardsGrid.classList.remove("hidden");
+  elements.riskEmptyState.classList.add("hidden");
+
+  const cardsHtml = items.map((item) => {
+    const ath = item.athlete;
+    const isHigh = item.level === "high";
+    const isMod = item.level === "moderate";
+    const probClass = isHigh
+      ? "risk-card__probability--high"
+      : isMod
+      ? "risk-card__probability--moderate"
+      : "risk-card__probability--low";
+    const cardClass = isHigh
+      ? "risk-card--high"
+      : isMod
+      ? "risk-card--moderate"
+      : "risk-card--low";
+    const probBadge = isHigh
+      ? `🔴 Alta Probabilidade · ${item.probabilityPercent}%`
+      : isMod
+      ? `🟡 Atenção Moderada · ${item.probabilityPercent}%`
+      : `🟢 Estável · ${item.probabilityPercent}%`;
+
+    const triggersHtml = (item.triggers || [])
+      .map((t) => {
+        const pClass = t.severity === "high" ? "risk-pill--high" : "risk-pill--medium";
+        return `<span class="risk-pill ${pClass}"><strong>${escapeHtml(t.domain)}:</strong> ${escapeHtml(t.label)}</span>`;
+      })
+      .join("");
+
+    const dateLabel = item.latestEntry?.timestampIso
+      ? new Date(item.latestEntry.timestampIso).toLocaleDateString("pt-BR")
+      : "Data n/d";
+
+    const zFormatted = Number.isFinite(item.metrics.zScore)
+      ? (item.metrics.zScore > 0 ? "+" : "") + item.metrics.zScore + "σ"
+      : "-";
+
+    return `
+      <article class="risk-card ${cardClass}" data-athlete-id="${escapeHtml(ath.id || ath.name)}">
+        <div class="risk-card__head">
+          <div class="risk-card__identity">
+            <span class="risk-card__category">${escapeHtml(ath.category)}</span>
+            <h4 class="risk-card__name">${escapeHtml(ath.name)}</h4>
+            <span class="risk-card__time">Último check-in: ${escapeHtml(dateLabel)}</span>
+          </div>
+          <div class="risk-card__probability ${probClass}">
+            <span>${probBadge}</span>
+            <span style="font-size: 0.68rem; font-weight: 500; text-transform: none; opacity: 0.85;">Score: ${item.score} pts</span>
+          </div>
+        </div>
+
+        <div class="risk-card__triggers">
+          ${triggersHtml || '<span class="risk-pill">Sem gatilhos agudos ativos</span>'}
+        </div>
+
+        <div class="risk-card__metrics-grid">
+          <div class="risk-metric-cell">
+            <span>Carga da Sessão</span>
+            <strong>${item.metrics.loadCurrent ?? "-"} <small style="color: #ffbac2;">(${zFormatted})</small></strong>
+          </div>
+          <div class="risk-metric-cell">
+            <span>Índice Hooper</span>
+            <strong>${item.metrics.hooper ? item.metrics.hooper + "/20" : "-"}</strong>
+          </div>
+          <div class="risk-metric-cell">
+            <span>Dor Muscular (DOMS)</span>
+            <strong>${item.metrics.doms ? item.metrics.doms + "/5" : "-"}</strong>
+          </div>
+          <div class="risk-metric-cell">
+            <span>Fadiga / Estresse</span>
+            <strong>F: ${item.metrics.fatigue ?? "-"} · E: ${item.metrics.stress ?? "-"}</strong>
+          </div>
+        </div>
+
+        <div class="risk-card__footer">
+          <span style="font-size: 0.74rem; color: var(--muted);">
+            ${Number.isFinite(item.metrics.pain) && item.metrics.pain > 0 ? `⚠️ Queixa de dor informada: EVA ${item.metrics.pain}/10` : "Sem relato de dor espontânea"}
+          </span>
+          <button class="risk-card__btn" type="button" data-action="open-athlete" data-athlete-id="${escapeHtml(ath.id || ath.name)}">
+            Ver Perfil Completo ➔
+          </button>
+        </div>
+      </article>
+    `;
+  }).join("");
+
+  elements.riskCardsGrid.innerHTML = cardsHtml;
+
+  elements.riskCardsGrid.querySelectorAll('[data-action="open-athlete"]').forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const athleteId = btn.getAttribute("data-athlete-id");
+      if (athleteId) {
+        selectAthlete(athleteId);
+      }
+    });
+  });
+}
+
+function renderRiskWorkspace() {
+  if (!elements.riskWorkspace) return;
+  populateRiskFilters();
+
+  if (elements.riskUpdatedAt) {
+    elements.riskUpdatedAt.textContent = state.updatedAt
+      ? new Date(state.updatedAt).toLocaleString("pt-BR")
+      : "Aguardando dados";
+  }
+
+  const allAssessments = OlympicoAnalysis.buildRiskAssessmentList(state.athletes, state.updatedAt);
+  renderRiskStats(allAssessments);
+
+  const search = (state.risk.filters.search || "").toLowerCase().trim();
+  const modality = state.risk.filters.modality;
+  const category = state.risk.filters.category;
+  const level = state.risk.filters.level;
+
+  let filtered = allAssessments;
+
+  if (level !== "all") {
+    filtered = filtered.filter((item) => item.level === level);
+  }
+  if (modality) {
+    filtered = filtered.filter((item) => item.athlete.modalityId === modality);
+  }
+  if (category) {
+    filtered = filtered.filter((item) => item.athlete.category === category);
+  }
+  if (search) {
+    filtered = filtered.filter((item) =>
+      item.athlete.name.toLowerCase().includes(search) ||
+      item.athlete.category.toLowerCase().includes(search)
+    );
+  }
+
+  if (elements.riskResultsCount) {
+    const levelLabel = level === "high" ? "com Alta Probabilidade" : level === "moderate" ? "em Atenção Moderada" : "no total";
+    elements.riskResultsCount.textContent = `Exibindo ${filtered.length} ${filtered.length === 1 ? "atleta" : "atletas"} ${levelLabel}`;
+  }
+
+  renderRiskCards(filtered);
+}
+
+function renderRiskBanner() {
+  if (!elements.riskBanner) return;
+  const allAssessments = OlympicoAnalysis.buildRiskAssessmentList(state.athletes, state.updatedAt);
+  const highRisk = allAssessments.filter((item) => item.level === "high");
+
+  if (!highRisk.length) {
+    elements.riskBanner.classList.add("hidden");
+    return;
+  }
+
+  elements.riskBannerTitle.textContent = `Radar de Risco: ${highRisk.length} ${highRisk.length === 1 ? "atleta" : "atletas"} com Alta Probabilidade de Sobrecarga`;
+  elements.riskBannerDesc.textContent = `Detectados picos agudos de carga (Z-Score individual elevado) e estresse neuromuscular. Clique para ver a análise completa.`;
+  elements.riskBanner.classList.remove("hidden");
+}
+
 function renderActiveWorkspace() {
   const isCalendar = state.activeSection === "calendar";
   const isPhysiotherapy = state.activeSection === "physiotherapy";
   const isAttendance = state.activeSection === "attendance";
   const isScience = state.activeSection === "science";
-  elements.panelWorkspace.classList.toggle("hidden", isCalendar || isPhysiotherapy || isAttendance || isScience);
+  const isRisk = state.activeSection === "risk";
+  elements.panelWorkspace.classList.toggle("hidden", isCalendar || isPhysiotherapy || isAttendance || isScience || isRisk);
   elements.calendarWorkspace.classList.toggle("hidden", !isCalendar);
   elements.physiotherapyWorkspace.classList.toggle("hidden", !isPhysiotherapy);
   elements.attendanceWorkspace.classList.toggle("hidden", !isAttendance);
   if (elements.scienceWorkspace) {
     elements.scienceWorkspace.classList.toggle("hidden", !isScience);
   }
-  elements.stats.classList.toggle("hidden", isPhysiotherapy || isAttendance || isScience);
-  elements.topbarActions.classList.toggle("hidden", isPhysiotherapy || isAttendance || isScience);
-  if (isScience) {
+  if (elements.riskWorkspace) {
+    elements.riskWorkspace.classList.toggle("hidden", !isRisk);
+  }
+  elements.stats.classList.toggle("hidden", isPhysiotherapy || isAttendance || isScience || isRisk);
+  elements.topbarActions.classList.toggle("hidden", isPhysiotherapy || isAttendance || isScience || isRisk);
+  if (isRisk) {
+    elements.topbarEyebrow.textContent = "Prevenção & Salvaguarda";
+    elements.topbarTitle.textContent = "Radar de Sobrecarga & Risco";
+    renderRiskWorkspace();
+  } else if (isScience) {
     elements.topbarEyebrow.textContent = "Ciência do Esporte";
     elements.topbarTitle.textContent = "Fundamentação & Diretrizes Práticas";
   } else if (isPhysiotherapy) {
@@ -2846,6 +3117,7 @@ function setSidebarActive(target) {
     calendar: elements.navCalendarButton,
     physiotherapy: elements.navPhysiotherapyButton,
     attendance: elements.navAttendanceButton,
+    risk: elements.navRiskButton,
     science: elements.navScienceButton,
   };
 
@@ -3017,6 +3289,7 @@ async function loadAthletes() {
             : "athletes"
     );
     renderActiveWorkspace();
+    renderRiskBanner();
     if (state.staffDrawerOpen) {
       renderStaffDrawer();
     }
@@ -3595,6 +3868,67 @@ if (elements.quickScienceButton) {
     setSidebarActive("science");
     renderActiveWorkspace();
     elements.scienceWorkspace?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
+if (elements.navRiskButton) {
+  elements.navRiskButton.addEventListener("click", () => {
+    state.activeSection = "risk";
+    setSidebarActive("risk");
+    renderActiveWorkspace();
+    elements.riskWorkspace?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
+if (elements.quickRiskButton) {
+  elements.quickRiskButton.addEventListener("click", () => {
+    state.activeSection = "risk";
+    setSidebarActive("risk");
+    renderActiveWorkspace();
+    elements.riskWorkspace?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
+if (elements.riskBannerAction) {
+  elements.riskBannerAction.addEventListener("click", () => {
+    state.activeSection = "risk";
+    setSidebarActive("risk");
+    renderActiveWorkspace();
+    elements.riskWorkspace?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
+if (elements.riskRefreshBtn) {
+  elements.riskRefreshBtn.addEventListener("click", () => {
+    renderRiskWorkspace();
+  });
+}
+
+if (elements.riskSearch) {
+  elements.riskSearch.addEventListener("input", (e) => {
+    state.risk.filters.search = e.target.value;
+    renderRiskWorkspace();
+  });
+}
+
+if (elements.riskModalityFilter) {
+  elements.riskModalityFilter.addEventListener("change", (e) => {
+    state.risk.filters.modality = e.target.value;
+    renderRiskWorkspace();
+  });
+}
+
+if (elements.riskCategoryFilter) {
+  elements.riskCategoryFilter.addEventListener("change", (e) => {
+    state.risk.filters.category = e.target.value;
+    renderRiskWorkspace();
+  });
+}
+
+if (elements.riskLevelFilter) {
+  elements.riskLevelFilter.addEventListener("change", (e) => {
+    state.risk.filters.level = e.target.value;
+    renderRiskWorkspace();
   });
 }
 

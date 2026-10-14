@@ -33,6 +33,26 @@ test("workspace de fisioterapia possui navegacao, filtros e regioes de resultado
   ].forEach((id) => assert.match(html, new RegExp(`id=["']${id}["']`)));
 });
 
+test("workspace do radar de risco possui navegacao, filtros, banner e regioes de resultado", () => {
+  [
+    "nav-risk-button",
+    "quick-risk-button",
+    "risk-banner",
+    "risk-workspace",
+    "risk-search",
+    "risk-modality-filter",
+    "risk-category-filter",
+    "risk-level-filter",
+    "risk-stats",
+    "risk-cards-grid",
+  ].forEach((id) => assert.match(html, new RegExp(`id=["']${id}["']`)));
+
+  assert.match(css, /\.risk-cards-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2/s);
+  assert.match(app, /renderRiskWorkspace/);
+  assert.match(app, /renderRiskBanner/);
+});
+
+
 test("cliente consome a API dedicada sem persistir dados clinicos", () => {
   assert.match(app, /physiotherapyUrl:\s*"\/api\/physiotherapy"/);
   assert.match(app, /fetch\(DEPLOYMENT\.physiotherapyUrl/);

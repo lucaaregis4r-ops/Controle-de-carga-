@@ -268,10 +268,46 @@ canvas {
 }
 
 .topbar__actions {
-  display: grid;
-  grid-template-columns: minmax(240px, 320px) 180px auto auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: end;
+}
+
+.topbar__risk-btn,
+.topbar__science-btn {
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 16px;
+  font-family: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--white);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  transition: all 0.2s ease;
+}
+
+.topbar__risk-btn {
+  background: rgba(243, 55, 74, 0.14);
+  border-color: rgba(243, 55, 74, 0.35);
+  color: #ffbac2;
+}
+
+.topbar__risk-btn:hover {
+  background: rgba(243, 55, 74, 0.28);
+  border-color: rgba(243, 55, 74, 0.6);
+  color: var(--white);
+}
+
+.topbar__science-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .content-grid,
@@ -1746,6 +1782,263 @@ canvas {
   padding: 22px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px dashed rgba(255, 255, 255, 0.12);
+}
+
+/* ==========================================================================
+   RADAR DE SOBRECARGA E RISCO
+   ========================================================================== */
+.risk-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-radius: 18px;
+  background: linear-gradient(90deg, rgba(223, 48, 70, 0.22), rgba(37, 47, 117, 0.35));
+  border: 1px solid rgba(243, 55, 74, 0.45);
+  box-shadow: var(--shadow);
+}
+
+.risk-banner__content {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.risk-banner__icon {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.risk-banner strong {
+  display: block;
+  font-family: "Sora", sans-serif;
+  font-size: 1.05rem;
+  color: var(--white);
+}
+
+.risk-banner p {
+  margin: 3px 0 0;
+  color: #ffbac2;
+  font-size: 0.88rem;
+}
+
+.risk-workspace {
+  display: grid;
+  gap: 24px;
+}
+
+.risk-hero {
+  background:
+    linear-gradient(135deg, rgba(46, 26, 68, 0.98), rgba(18, 24, 61, 0.98)),
+    linear-gradient(90deg, rgba(243, 55, 74, 0.22), transparent);
+}
+
+.risk-hero__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.risk-hero__badges .badge--pill {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--white);
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.risk-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.risk-card {
+  position: relative;
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(28, 36, 88, 0.98), rgba(16, 21, 54, 0.98));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--shadow);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.risk-card:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+.risk-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  border-radius: 20px 0 0 20px;
+  background: #7ea8ff;
+}
+
+.risk-card--high::before {
+  background: #ff5b6b;
+}
+
+.risk-card--moderate::before {
+  background: #ffbf55;
+}
+
+.risk-card--low::before {
+  background: #4fe0a2;
+}
+
+.risk-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.risk-card__identity {
+  display: grid;
+  gap: 4px;
+}
+
+.risk-card__category {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #aeb9ed;
+}
+
+.risk-card__name {
+  margin: 0;
+  font-family: "Sora", sans-serif;
+  font-size: 1.25rem;
+  color: var(--white);
+}
+
+.risk-card__time {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.risk-card__probability {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.risk-card__probability--high {
+  background: rgba(255, 91, 107, 0.18);
+  color: #ffbac2;
+  border: 1px solid rgba(255, 91, 107, 0.35);
+}
+
+.risk-card__probability--moderate {
+  background: rgba(255, 191, 85, 0.18);
+  color: #ffe2aa;
+  border: 1px solid rgba(255, 191, 85, 0.35);
+}
+
+.risk-card__probability--low {
+  background: rgba(79, 224, 162, 0.18);
+  color: #a7f4cf;
+  border: 1px solid rgba(79, 224, 162, 0.35);
+}
+
+.risk-card__triggers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.risk-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.06);
+  color: #dce4ff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.risk-pill--high {
+  background: rgba(255, 91, 107, 0.14);
+  color: #ffbac2;
+  border-color: rgba(255, 91, 107, 0.28);
+}
+
+.risk-pill--medium {
+  background: rgba(255, 191, 85, 0.14);
+  color: #ffe2aa;
+  border-color: rgba(255, 191, 85, 0.28);
+}
+
+.risk-card__metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.risk-metric-cell {
+  display: grid;
+  gap: 2px;
+}
+
+.risk-metric-cell span {
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.risk-metric-cell strong {
+  font-size: 0.95rem;
+  color: var(--white);
+}
+
+.risk-card__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.risk-card__btn {
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 7px 14px;
+  border-radius: 10px;
+  color: var(--white);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.risk-card__btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .hidden {

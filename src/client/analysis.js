@@ -316,6 +316,249 @@
       );
   }
 
+  function calculateInjuryRisk(athlete, updatedAtIso) {
+    if (!athlete) return null;
+    const entries = recentEntries(athlete, updatedAtIso, ANALYSIS_CONFIG.activityWindowDays);
+    if (!entries.length) return null;
+
+    const latest = entries[0];
+    const baseline = personalBaseline(athlete, "loadScore");
+    const hooper = computeHooperIndex(latest);
+    const acwrEWMA = calculateACWR_EWMA(athlete.entries, "loadScore");
+
+    let score = 0;
+    const triggers = [];
+
+    // 1. Z-Score da Carga da Sessão (Pico Agudo Intra-individual comprovado em t=0: Z = +1.89σ)
+    const z = baseline.zScore;
+    if (Number.isFinite(z)) {
+      if (z >= 2.0) {
+        score += 3.5;
+        triggers.push({
+          type: "z_load_critical",
+          domain: "Carga",
+          severity: "high",
+          value: `+${z}σ`,
+          label: `Pico extremo de carga (+${z}σ acima da média pessoal)`,
+        });
+      } else if (z >= 1.5) {
+        score += 2.5;
+        triggers.push({
+          type: "z_load_high",
+          domain: "Carga",
+          severity: "medium",
+          value: `+${z}σ`,
+          label: `Carga bem acima do habitual (+${z}σ)`,
+        });
+      } else if (z >= 1.0) {
+        score += 1.0;
+        triggers.push({
+          type: "z_load_mod",
+          domain: "Carga",
+          severity: "low",
+          value: `+${z}σ`,
+          label: `Carga moderadamente elevada (+${z}σ)`,
+        });
+      }
+    } else if (baseline.percentile !== null && baseline.percentile >= 90) {
+      score += 1.5;
+      triggers.push({
+        type: "load_pct_high",
+        domain: "Carga",
+        severity: "medium",
+        value: `P${baseline.percentile}`,
+        label: `Carga no percentil P${baseline.percentile} individual`,
+      });
+    }
+
+    // 2. Dor Muscular Tardia / DOMS (em t=0 subiu +37.5%, média 3.67/5)
+    const doms = latest.muscleScore;
+    if (Number.isFinite(doms)) {
+      if (doms >= 5) {
+        score += 3.0;
+        triggers.push({
+          type: "doms_critical",
+          domain: "DOMS",
+          severity: "high",
+          value: `${doms}/5`,
+          label: "Dor muscular tardia máxima (5/5)",
+        });
+      } else if (doms >= 4) {
+        score += 2.0;
+        triggers.push({
+          type: "doms_high",
+          domain: "DOMS",
+          severity: "medium",
+          value: `${doms}/5`,
+          label: "Dor muscular tardia acentuada (4/5)",
+        });
+      }
+    }
+
+    // 3. Índice Hooper Composto (em t=0 foi 13.18 ± 2.96)
+    if (hooper && Number.isFinite(hooper.total)) {
+      if (hooper.total >= 16) {
+        score += 3.0;
+        triggers.push({
+          type: "hooper_critical",
+          domain: "Hooper",
+          severity: "high",
+          value: `${hooper.total}/20`,
+          label: `Índice Hooper crítico (${hooper.total}/20)`,
+        });
+      } else if (hooper.total >= 13) {
+        score += 1.8;
+        triggers.push({
+          type: "hooper_warning",
+          domain: "Hooper",
+          severity: "medium",
+          value: `${hooper.total}/20`,
+          label: `Índice Hooper em faixa de estresse (${hooper.total}/20)`,
+        });
+      }
+    }
+
+    // 4. Fadiga Subjetiva (em t-1 já salta +19.5% antes da lesão)
+    const fatigue = latest.fatigueScore;
+    if (Number.isFinite(fatigue) && fatigue >= 4) {
+      score += 2.0;
+      triggers.push({
+        type: "fatigue_high",
+        domain: "Fadiga",
+        severity: "medium",
+        value: `${fatigue}/5`,
+        label: `Fadiga residual alta (${fatigue}/5)`,
+      });
+    }
+
+    // 5. Estresse Psicossocial (Odds Ratio 4.51 na predição de eventos)
+    const stress = latest.stressScore;
+    if (Number.isFinite(stress) && stress >= 4) {
+      score += 2.5;
+      triggers.push({
+        type: "stress_high",
+        domain: "Estresse",
+        severity: "high",
+        value: `${stress}/5`,
+        label: `Estresse psicossocial elevado (${stress}/5)`,
+      });
+    }
+
+    // 6. Dor Informada (EVA 0 a 10)
+    const pain = latest.painLevel;
+    if (Number.isFinite(pain)) {
+      if (pain >= 6) {
+        score += 4.5;
+        triggers.push({
+          type: "pain_severe",
+          domain: "Dor",
+          severity: "high",
+          value: `EVA ${pain}/10`,
+          label: `Dor severa informada (${pain}/10)`,
+        });
+      } else if (pain >= 3) {
+        score += 2.2;
+        triggers.push({
+          type: "pain_mild",
+          domain: "Dor",
+          severity: "medium",
+          value: `EVA ${pain}/10`,
+          label: `Dor moderada em ascensão (${pain}/10)`,
+        });
+      }
+    }
+
+    // 7. ACWR Exponencial EWMA
+    if (Number.isFinite(acwrEWMA)) {
+      if (acwrEWMA >= 1.5) {
+        score += 2.0;
+        triggers.push({
+          type: "acwr_high",
+          domain: "ACWR",
+          severity: "high",
+          value: `${acwrEWMA}`,
+          label: `ACWR Exponencial em zona de sobrecarga (${acwrEWMA})`,
+        });
+      } else if (acwrEWMA >= 1.3) {
+        score += 1.0;
+        triggers.push({
+          type: "acwr_warning",
+          domain: "ACWR",
+          severity: "low",
+          value: `${acwrEWMA}`,
+          label: `ACWR em zona de atenção (${acwrEWMA})`,
+        });
+      }
+    }
+
+    score = rounded(score);
+
+    // Classificação da Probabilidade:
+    let probability = "Baixa";
+    let level = "low";
+    let probabilityPercent = Math.min(35, Math.max(8, Math.round(score * 7)));
+
+    const isHighCombo =
+      (Number.isFinite(z) && z >= 1.8 && hooper && hooper.total >= 13) ||
+      (Number.isFinite(pain) && pain >= 5 && Number.isFinite(z) && z >= 1.0) ||
+      score >= 6.5;
+
+    if (isHighCombo) {
+      probability = "Alta";
+      level = "high";
+      probabilityPercent = Math.min(96, Math.max(72, Math.round(65 + score * 3.5)));
+    } else if (score >= 3.5 || (hooper && hooper.total >= 13) || (Number.isFinite(doms) && doms >= 4)) {
+      probability = "Moderada";
+      level = "moderate";
+      probabilityPercent = Math.min(68, Math.max(38, Math.round(30 + score * 6)));
+    }
+
+    return {
+      athlete,
+      score,
+      probability,
+      probabilityPercent,
+      level,
+      triggers,
+      metrics: {
+        zScore: z,
+        loadCurrent: baseline.current,
+        hooper: hooper?.total ?? null,
+        doms: doms ?? null,
+        fatigue: fatigue ?? null,
+        stress: stress ?? null,
+        pain: pain ?? null,
+        acwr: acwrEWMA,
+        recovery: latest.recoveryScore ?? null,
+      },
+      latestEntry: latest,
+    };
+  }
+
+  function buildRiskAssessmentList(athletes, updatedAtIso, options = {}) {
+    const eligible = getAnalysisEligibleAthletes(athletes, updatedAtIso, {
+      days: options.days ?? ANALYSIS_CONFIG.activityWindowDays,
+    });
+
+    const list = eligible
+      .map((ath) => calculateInjuryRisk(ath, updatedAtIso))
+      .filter(Boolean);
+
+    list.sort((a, b) => {
+      const rank = { high: 0, moderate: 1, low: 2 };
+      return (
+        rank[a.level] - rank[b.level] ||
+        b.score - a.score ||
+        (b.metrics.zScore ?? -99) - (a.metrics.zScore ?? -99) ||
+        (b.metrics.hooper ?? 0) - (a.metrics.hooper ?? 0) ||
+        Date.parse(b.latestEntry?.timestampIso || 0) - Date.parse(a.latestEntry?.timestampIso || 0) ||
+        a.athlete.name.localeCompare(b.athlete.name, "pt-BR")
+      );
+    });
+
+    return list;
+  }
+
   return {
     ANALYSIS_CONFIG,
     computeRecoveryScore,
@@ -323,6 +566,8 @@
     recentEntries,
     personalBaseline,
     buildAttentionItems,
+    calculateInjuryRisk,
+    buildRiskAssessmentList,
     standardDeviation,
     computeZScore,
     computeHooperIndex,
