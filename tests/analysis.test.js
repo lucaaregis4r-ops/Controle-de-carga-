@@ -97,3 +97,55 @@ test("relatório clínico reconhece veto parcial sem classificar NÃO como veto"
   assert.match(html, /<span>Prioritários<\/span>\s*<strong>1<\/strong>/);
   assert.match(html, /relatório de fisioterapia/);
 });
+
+test("calcula índice Hooper corretamente respeitando os 4 pilares", () => {
+  const normal = Analysis.computeHooperIndex({ fatigueScore: 3, sleepScore: 2, muscleScore: 4, stressScore: 3 });
+  assert.deepEqual(normal, {
+    total: 12,
+    average: 3,
+    fatigue: 3,
+    sleep: 2,
+    muscle: 4,
+    stress: 3,
+  });
+
+  const missingOne = Analysis.computeHooperIndex({ fatigueScore: 4, sleepScore: 4, muscleScore: 4 });
+  assert.equal(missingOne.total, 16);
+  assert.equal(missingOne.average, 4);
+
+  const empty = Analysis.computeHooperIndex({});
+  assert.equal(empty, null);
+});
+
+test("calcula desvio padrão e Z-Score com robustez matemática", () => {
+  const values = [2, 4, 4, 4, 5, 5, 7, 9];
+  const std = Analysis.standardDeviation(values);
+  assert.ok(std !== null && Math.abs(std - 2.14) < 0.05);
+
+  const z = Analysis.computeZScore(7.14, 5, std);
+  assert.equal(z, 1);
+
+  assert.equal(Analysis.standardDeviation([5]), null);
+  assert.equal(Analysis.computeZScore(5, 5, 0), null);
+});
+
+test("calcula EWMA e ACWR com janela adaptativa e zonas de risco", () => {
+  const shortEntries = [entry("25", { loadScore: 4 }), entry("24", { loadScore: 3 })];
+  assert.equal(Analysis.calculateACWR(shortEntries, "loadScore", 5), null);
+  assert.equal(Analysis.calculateACWR_EWMA(shortEntries, "loadScore", 5), null);
+
+  const fullEntries = Array.from({ length: 10 }, (_, i) =>
+    entry(String(25 - i).padStart(2, "0"), { loadScore: i < 3 ? 4 : 2 })
+  );
+  const acwr = Analysis.calculateACWR(fullEntries, "loadScore", 5);
+  const acwrEwma = Analysis.calculateACWR_EWMA(fullEntries, "loadScore", 5);
+
+  assert.ok(Number.isFinite(acwr) && acwr > 1);
+  assert.ok(Number.isFinite(acwrEwma) && acwrEwma > 1);
+
+  assert.equal(Analysis.getACWRZone(0.7).zone, "undertraining");
+  assert.equal(Analysis.getACWRZone(1.1).zone, "optimal");
+  assert.equal(Analysis.getACWRZone(1.4).zone, "warning");
+  assert.equal(Analysis.getACWRZone(1.6).zone, "danger");
+});
+

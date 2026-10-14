@@ -1788,26 +1788,131 @@ function renderDistributionReport(values, metricKey, scopeLabel) {
 function renderHighlightsForAthlete(athlete) {
   const baseline = buildAthleteLoadBaseline(athlete);
   const eligible = OlympicoAnalysis.getAnalysisEligibleAthletes([athlete], state.updatedAt).length > 0;
+  const rawBaseline = OlympicoAnalysis.personalBaseline(athlete, "loadScore");
+  const acwr = OlympicoAnalysis.calculateACWR_EWMA(athlete.entries, "loadScore");
+  const acwrZone = OlympicoAnalysis.getACWRZone(acwr);
+  const hooper = OlympicoAnalysis.computeHooperIndex(athlete.latest);
+
   const cards = [
-    { label: "Desgaste percebido", value: eligible ? formatRatio(baseline.currentMovingAverage) : "Sem dado atual", note: "Média das 3 últimas respostas" },
-    { label: "Recuperação", value: eligible ? formatRatio(athlete.latest.recoveryScore) : "Sem dado atual", note: "Último check-in" },
-    { label: "Último check-in", value: athlete.lastCheckIn || "Sem data", note: eligible ? "Elegível para leitura atual" : "Histórico disponível; fora da comparação atual" },
-    { label: "Padrão pessoal", value: eligible && baseline.ownPercentile !== null ? baseline.ownBand : "Base histórica insuficiente", note: `${baseline.baselineCount} janelas anteriores` },
+    {
+      label: "Desgaste percebido",
+      value: eligible ? formatRatio(baseline.currentMovingAverage) : "Sem dado atual",
+      note: "Média das 3 últimas respostas",
+    },
+    {
+      label: "Recuperação",
+      value: eligible ? formatRatio(athlete.latest.recoveryScore) : "Sem dado atual",
+      note: "Escala 0 a 5 · Último check-in",
+    },
+    {
+      label: "Índice Hooper",
+      value: hooper ? `${hooper.total}/20 · Média ${hooper.average}` : "Base insuficiente",
+      note: hooper
+        ? `Fad ${hooper.fatigue} · Son ${hooper.sleep} · Dor ${hooper.muscle} · Est ${hooper.stress}`
+        : "4 pilares do questionário",
+    },
+    {
+      label: "ACWR (Exponencial)",
+      value: acwr !== null ? `${acwr} · ${acwrZone.label}` : (athlete.entries?.length < 5 ? `Em construção (${athlete.entries?.length || 0}/5)` : "Sem base"),
+      note: "Razão Aguda:Crônica (EWMA)",
+    },
+    {
+      label: "Z-Score Desgaste",
+      value: rawBaseline.zScore !== null ? `${rawBaseline.zScore > 0 ? "+" : ""}${rawBaseline.zScore} σ` : "Sem dispersão suficiente",
+      note: "Desvios do histórico próprio",
+    },
+    {
+      label: "Padrão pessoal",
+      value: eligible && baseline.ownPercentile !== null ? baseline.ownBand : "Base em construção",
+      note: `${baseline.baselineCount} janelas anteriores`,
+    },
   ];
-  elements.detailHighlights.innerHTML = cards.map((card) => `<article class="highlight"><p>${escapeHtml(card.label)}</p><strong>${escapeHtml(card.value)}</strong><span>${escapeHtml(card.note)}</span></article>`).join("");
+  elements.detailHighlights.innerHTML = cards
+    .map(
+      (card) =>
+        `<article class="highlight"><p>${escapeHtml(card.label)}</p><strong>${escapeHtml(
+          card.value
+        )}</strong><span>${escapeHtml(card.note)}</span></article>`
+    )
+    .join("");
 }
 
 function renderHighlightsForTeam(teamName) {
   const athletes = getAthletesByTeam(teamName);
-  const weekly = OlympicoAnalysis.getAnalysisEligibleAthletes(athletes, state.updatedAt, { days: OlympicoAnalysis.ANALYSIS_CONFIG.reportWeekDays });
+  const weekly = OlympicoAnalysis.getAnalysisEligibleAthletes(athletes, state.updatedAt, {
+    days: OlympicoAnalysis.ANALYSIS_CONFIG.reportWeekDays,
+  });
   const baseline = buildTeamLoadBaseline(teamName);
+
+  const teamAcwrValues = athletes
+    .map((a) => OlympicoAnalysis.calculateACWR_EWMA(a.entries, "loadScore"))
+    .filter(Number.isFinite);
+  const teamAcwr = teamAcwrValues.length ? roundNumber(average(teamAcwrValues)) : null;
+  const teamAcwrZone = OlympicoAnalysis.getACWRZone(teamAcwr);
+
+  const teamHooperValues = weekly
+    .map((a) => OlympicoAnalysis.computeHooperIndex(a.latest)?.total)
+    .filter(Number.isFinite);
+  const avgHooper = teamHooperValues.length ? roundNumber(average(teamHooperValues)) : null;
+
   const cards = [
-    { label: "Desgaste percebido", value: formatRatio(average(weekly.map((athlete) => average(OlympicoAnalysis.recentEntries(athlete, state.updatedAt).map((entry) => entry.loadScore))))), note: "Média da semana · 7 dias" },
-    { label: "Recuperação", value: formatRatio(average(weekly.map((athlete) => average(OlympicoAnalysis.recentEntries(athlete, state.updatedAt).map((entry) => entry.recoveryScore))))), note: "Média da semana · 7 dias" },
-    { label: "Estresse", value: formatRatio(average(weekly.map((athlete) => average(OlympicoAnalysis.recentEntries(athlete, state.updatedAt).map((entry) => entry.stressScore))))), note: "Média da semana · 7 dias" },
-    { label: "Contexto histórico", value: baseline.teamHistoryPercentile === null ? "Base histórica insuficiente" : baseline.teamHistoryBand, note: `${baseline.baselineCount} janelas anteriores` },
+    {
+      label: "Desgaste percebido",
+      value: formatRatio(
+        average(
+          weekly.map((athlete) =>
+            average(OlympicoAnalysis.recentEntries(athlete, state.updatedAt).map((entry) => entry.loadScore))
+          )
+        )
+      ),
+      note: "Média da semana · 7 dias",
+    },
+    {
+      label: "Recuperação",
+      value: formatRatio(
+        average(
+          weekly.map((athlete) =>
+            average(OlympicoAnalysis.recentEntries(athlete, state.updatedAt).map((entry) => entry.recoveryScore))
+          )
+        )
+      ),
+      note: "Média da semana · 7 dias",
+    },
+    {
+      label: "Índice Hooper Médio",
+      value: avgHooper !== null ? `${avgHooper}/20` : "Sem dados",
+      note: `${teamHooperValues.length} atletas avaliados na semana`,
+    },
+    {
+      label: "ACWR Médio da Equipe",
+      value: teamAcwr !== null ? `${teamAcwr} · ${teamAcwrZone.label}` : "Base reduzida",
+      note: "Média da relação aguda:crônica",
+    },
+    {
+      label: "Estresse",
+      value: formatRatio(
+        average(
+          weekly.map((athlete) =>
+            average(OlympicoAnalysis.recentEntries(athlete, state.updatedAt).map((entry) => entry.stressScore))
+          )
+        )
+      ),
+      note: "Média da semana · 7 dias",
+    },
+    {
+      label: "Contexto histórico",
+      value: baseline.teamHistoryPercentile === null ? "Base histórica insuficiente" : baseline.teamHistoryBand,
+      note: `${baseline.baselineCount} janelas anteriores`,
+    },
   ];
-  elements.detailHighlights.innerHTML = cards.map((card) => `<article class="highlight"><p>${escapeHtml(card.label)}</p><strong>${escapeHtml(card.value)}</strong><span>${escapeHtml(card.note)}</span></article>`).join("");
+  elements.detailHighlights.innerHTML = cards
+    .map(
+      (card) =>
+        `<article class="highlight"><p>${escapeHtml(card.label)}</p><strong>${escapeHtml(
+          card.value
+        )}</strong><span>${escapeHtml(card.note)}</span></article>`
+    )
+    .join("");
 }
 
 function getTrainingDatesForTeam(teamName) {
@@ -2690,6 +2795,39 @@ function renderAthletes() {
     card.querySelector(".card__checkin").textContent = athlete.lastCheckIn || "Sem data";
     card.querySelector(".card__entries").textContent = `${athlete.totalEntries} respostas`;
     card.querySelector(".card__summary").textContent = summary.text;
+
+    const badgesContainer = card.querySelector(".card__badges");
+    if (badgesContainer) {
+      badgesContainer.innerHTML = "";
+      const acwr = OlympicoAnalysis.calculateACWR_EWMA(athlete.entries, "loadScore");
+      if (acwr !== null) {
+        const zone = OlympicoAnalysis.getACWRZone(acwr);
+        const pill = document.createElement("span");
+        pill.className = `metric-pill metric-pill--${zone.zone}`;
+        pill.title = `Razão Aguda:Crônica Exponencial (EWMA): ${zone.label}`;
+        pill.textContent = `ACWR ${acwr}`;
+        badgesContainer.append(pill);
+      }
+
+      const hooper = OlympicoAnalysis.computeHooperIndex(athlete.latest);
+      if (hooper !== null) {
+        const pill = document.createElement("span");
+        pill.className = "metric-pill metric-pill--hooper";
+        pill.title = `Índice Hooper: ${hooper.total}/20 (Fad ${hooper.fatigue} · Son ${hooper.sleep} · Dor ${hooper.muscle} · Est ${hooper.stress})`;
+        pill.textContent = `Hooper ${hooper.total}`;
+        badgesContainer.append(pill);
+      }
+
+      const baseline = OlympicoAnalysis.personalBaseline(athlete, "loadScore");
+      if (baseline.zScore !== null && Math.abs(baseline.zScore) >= 1.5) {
+        const pill = document.createElement("span");
+        pill.className = "metric-pill metric-pill--zscore";
+        pill.title = `Z-Score de Desgaste Pessoal: ${baseline.zScore > 0 ? "+" : ""}${baseline.zScore} desvios`;
+        pill.textContent = `Z ${baseline.zScore > 0 ? "+" : ""}${baseline.zScore}`;
+        badgesContainer.append(pill);
+      }
+    }
+
     card.querySelector(".card__load").textContent = formatRatio(athlete.latest.loadScore);
     card.querySelector(".card__recovery").textContent = formatRatio(athlete.latest.recoveryScore);
     card.querySelector(".card__pain").textContent = formatRatio(athlete.latest.painLevel, 10);
