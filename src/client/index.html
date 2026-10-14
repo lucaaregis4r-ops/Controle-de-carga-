@@ -106,6 +106,9 @@
           <button class="sidebar__link" id="nav-calendar-button" type="button" aria-controls="calendar-workspace">
             Calendário
           </button>
+          <button class="sidebar__link" id="nav-science-button" type="button" aria-controls="science-workspace">
+            Ciência & Metodologia
+          </button>
           <a
             class="sidebar__link sidebar__link--ghost"
             href="https://drive.google.com/drive/folders/1JWrUMVtkYrH2geuaoPN3hiFWz4zncno0"
@@ -131,6 +134,9 @@
           </div>
 
           <div class="topbar__actions" id="topbar-actions">
+            <button class="button button--ghost topbar__science-btn" id="quick-science-button" type="button" title="Ver fundamentos científicos do ACWR e Índice Hooper">
+              📚 Metodologia Científica
+            </button>
             <label class="field field--search">
               <span>Buscar atleta</span>
               <input
@@ -479,6 +485,213 @@
                 <div id="training-calendar-view"></div>
                 <aside class="training-detail hidden" id="training-calendar-detail"></aside>
               </div>
+            </article>
+          </section>
+
+          <section class="science-workspace hidden" id="science-workspace">
+            <article class="science-shell">
+              <header class="science-header">
+                <span class="science-badge">Núcleo de Fisiologia e Ciência do Esporte</span>
+                <h2>Monitoramento de Carga, Prontidão e Prevenção de Lesões</h2>
+                <p class="science-lead">
+                  Fundamentação teórica, modelos estatísticos normativos e referências revisadas por pares (Google Acadêmico) aplicadas na tomada de decisão da comissão técnica do Olympico Club.
+                </p>
+              </header>
+
+              <!-- GUIA RÁPIDO DO TREINADOR: SEMÁFORO VISUAL -->
+              <section class="science-quickguide">
+                <div class="science-quickguide__header">
+                  <h3>🎯 Guia Rápido de Decisão para a Comissão Técnica</h3>
+                  <p>Tradução direta dos indicadores estatísticos para condutas práticas na quadra e na piscina.</p>
+                </div>
+                <div class="science-traffic-lights">
+                  <article class="traffic-card traffic-card--green">
+                    <div class="traffic-card__badge">🟢 BANDEIRA VERDE · PRONTIDÃO TOTAL</div>
+                    <div class="traffic-card__metrics">ACWR 0.80 a 1.30 · Hooper &lt; 12 · Dor &lt; 3 · Z-Score &lt; 1.0</div>
+                    <h4>Atleta em "Sweet Spot" e Alta Capacidade Adaptativa</h4>
+                    <p>O atleta construiu lastro crônico suficiente para absorver a carga da semana. Baixo risco relativo de lesão tecidual.</p>
+                    <div class="traffic-card__directive">
+                      <strong>Conduta do Treinador:</strong>
+                      <ul>
+                        <li>Liberado para 100% dos minutos de treino/jogo.</li>
+                        <li>Permitida aplicação de estímulos de alta intensidade, frenagem e contato.</li>
+                      </ul>
+                    </div>
+                  </article>
+
+                  <article class="traffic-card traffic-card--yellow">
+                    <div class="traffic-card__badge">🟡 BANDEIRA AMARELA · ATENÇÃO PREVENTIVA</div>
+                    <div class="traffic-card__metrics">ACWR 1.31 a 1.49 · Hooper 12 a 15 · Z-Score 1.5 a 1.8 · Dor 4 a 5</div>
+                    <h4>Alerta de Elevação de Fadiga ou Subida Rápida de Carga</h4>
+                    <p>O atleta começa a acumular microtraumas ou perturbação no sono. Risco moderado de transição para fadiga não-funcional.</p>
+                    <div class="traffic-card__directive">
+                      <strong>Conduta do Treinador:</strong>
+                      <ul>
+                        <li>Manter a minutagem planejada, sem acréscimos adicionais de volume.</li>
+                        <li>Reforçar hidratação, alimentação e higiene do sono.</li>
+                        <li>Monitorar queixas específicas pós-sessão e dialogar com o preparador físico.</li>
+                      </ul>
+                    </div>
+                  </article>
+
+                  <article class="traffic-card traffic-card--red">
+                    <div class="traffic-card__badge">🔴 BANDEIRA VERMELHA · RISCO CRÍTICO / SOBRECARGA</div>
+                    <div class="traffic-card__metrics">ACWR &ge; 1.50 · Hooper &ge; 16 · Z-Score &ge; 2.0 · Dor &ge; 6/10</div>
+                    <h4>Danger Zone: Risco de Lesão Multiplicado por 2x a 4x</h4>
+                    <p>Pico desproporcional de carga aguda sobre tolerância crônica (Gabbett, 2016) ou estresse neuromuscular agudo.</p>
+                    <div class="traffic-card__directive">
+                      <strong>Conduta do Treinador:</strong>
+                      <ul>
+                        <li><strong>Reduzir volume em 20% a 30%</strong> ou dosar participação nos blocos de maior impacto.</li>
+                        <li>Substituir tiros de velocidade máxima e saltos repetidos por trabalhos técnico-táticos e posicionamento.</li>
+                        <li><strong>Encaminhamento mandatório à Fisioterapia</strong> para avaliação musculoesquelética prévia.</li>
+                      </ul>
+                    </div>
+                  </article>
+                </div>
+              </section>
+
+              <!-- ENSAIO CIENTÍFICO COMPLETO -->
+              <section class="science-essay">
+                <article class="science-chapter">
+                  <span class="science-chapter__number">1</span>
+                  <div class="science-chapter__content">
+                    <h3>O Paradoxo Carga-Lesão e a Razão Aguda:Crônica (ACWR)</h3>
+                    <p class="science-quote">
+                      "O treinamento inadequado predispõe atletas a lesões; porém, o treinamento sistemático e progressivo desenvolve a robustez física necessária para protegê-los."
+                      <cite>— Dr. Tim J. Gabbett, British Journal of Sports Medicine (2016)</cite>
+                    </p>
+                    <p>
+                      Historicamente, o controle de carga foi permeado pelo dogma simplista de que "mais treino equivale a mais lesões". A pesquisa seminal de <strong>Gabbett (2016)</strong> demonstrou o <em>paradoxo do treinamento</em>: atletas com altos níveis de carga crônica (aptidão/tolerância) sofrem menos lesões do que atletas subtreinados submetidos a aumentos abruptos de intensidade.
+                    </p>
+                    <p>
+                      A <strong>Razão de Carga Aguda:Crônica (ACWR)</strong> expressa a relação matemática entre o estresse imposto recentemente (carga aguda: últimos 3 a 7 dias, reflexo da <em>fadiga</em>) e a tolerância fisiológica acumulada (carga crônica: últimas 3 a 4 semanas, reflexo do <em>condicionamento</em>).
+                    </p>
+                    <div class="science-zones-table">
+                      <div class="zone-row zone-row--under">
+                        <span class="zone-pill">&lt; 0.80</span>
+                        <strong>Zona de Destreinamento</strong>
+                        <span>Carga aguda substancialmente inferior à crônica. Ocorre em semanas de férias, pós-lesão ou descontinuidade. O atleta perde tolerância mecânica e fica vulnerável a picos futuros.</span>
+                      </div>
+                      <div class="zone-row zone-row--sweet">
+                        <span class="zone-pill">0.80 – 1.30</span>
+                        <strong>"The Sweet Spot" (Faixa Ótima)</strong>
+                        <span>Equilíbrio ideal entre estímulo de adaptação e regeneração. Menor índice de lesões esportivas e ótimo rendimento neuromuscular.</span>
+                      </div>
+                      <div class="zone-row zone-row--warning">
+                        <span class="zone-pill">1.31 – 1.49</span>
+                        <strong>Zona de Alerta Moderado</strong>
+                        <span>Elevação acelerada da carga aguda. Demanda vigilância das respostas de recuperação e dor muscular tardia.</span>
+                      </div>
+                      <div class="zone-row zone-row--danger">
+                        <span class="zone-pill">&ge; 1.50</span>
+                        <strong>"Danger Zone" (Zona de Sobrecarga)</strong>
+                        <span>Pico agudo descompensado. Evidências empíricas (Hulin et al., 2016; Gabbett, 2016) indicam risco relativo de lesão de 2 a 4 vezes maior na semana subsequente.</span>
+                      </div>
+                    </div>
+                    <h4>O Modelo Exponencial (EWMA) vs. Média Móvel Simples</h4>
+                    <p>
+                      Para superar as limitações das médias móveis simples (Rolling Averages) — que atribuem o mesmo peso a um treino realizado ontem e a um treino de 28 dias atrás —, implementamos o modelo <strong>EWMA (Exponentially Weighted Moving Average)</strong> preconizado por <strong>Williams et al. (2017)</strong>. O EWMA aplica um fator de decaimento exponencial:
+                    </p>
+                    <p class="science-formula">
+                      <code>EWMA_hoje = Carga_hoje &times; &lambda; + EWMA_ontem &times; (1 - &lambda;)</code><br />
+                      <small>onde &lambda; = 2 / (N + 1). Agudo (N &asymp; 7 dias &rarr; &lambda; = 0.25); Crônico (N &asymp; 28 dias &rarr; &lambda; = 0.069).</small>
+                    </p>
+                  </div>
+                </article>
+
+                <article class="science-chapter">
+                  <span class="science-chapter__number">2</span>
+                  <div class="science-chapter__content">
+                    <h3>Monitoramento Subjetivo e a Validade do Índice Hooper</h3>
+                    <p class="science-quote">
+                      "Medidas subjetivas de autorrelato refletem a carga aguda e crônica de treinamento com sensibilidade e consistência superiores a marcadores objetivos como creatina quinase, cortisol ou frequência cardíaca."
+                      <cite>— Saw, Main & Gastin, British Journal of Sports Medicine (2016)</cite>
+                    </p>
+                    <p>
+                      A meta-análise e revisão sistemática de <strong>Saw et al. (2016)</strong> avaliou 56 estudos com atletas de alto nível e concluiu que questionários subjetivos respondem de forma imediata e confiável à fadiga, sono e dor muscular, superando frequentemente biópsias, exames de sangue ou dinamometria.
+                    </p>
+                    <p>
+                      O questionário do Olympico Club fundamenta-se na escala clássica de <strong>Hooper & Mackinnon (1995)</strong>, sintetizando quatro dimensões psicofisiológicas vitais:
+                    </p>
+                    <ul class="science-dimensions">
+                      <li><strong>Fadiga Percebida (1 a 5):</strong> Indicador de esgotamento central e periférico do sistema neuromuscular.</li>
+                      <li><strong>Qualidade do Sono (1 a 5):</strong> Eixo primordial da síntese de hormônio do crescimento (GH), regulação autonômica e restauração cognitiva.</li>
+                      <li><strong>Dor Muscular Tardia / DOMS (1 a 5):</strong> Evidência de microrrupturas no citoesqueleto muscular e inflamação pós-esforço excêntrico.</li>
+                      <li><strong>Nível de Estresse Psicossocial (1 a 5):</strong> Sobrecarga emocional externa (escola, família, pressão competitiva) que eleva o cortisol sérico e atrasa o reparo tecidual.</li>
+                    </ul>
+                    <p>
+                      O <strong>Índice Hooper</strong> corresponde à somatória das 4 perguntas (escala de 4 a 20):
+                    </p>
+                    <div class="science-hooper-scale">
+                      <div class="hooper-bracket hooper-bracket--low">
+                        <strong>4 a 11 pontos</strong>
+                        <span>Excelente prontidão física e psicológica. Organismo plenamente regenerado.</span>
+                      </div>
+                      <div class="hooper-bracket hooper-bracket--mid">
+                        <strong>12 a 14 pontos</strong>
+                        <span>Fadiga moderada ou perturbação leve no sono. Exige atenção da comissão.</span>
+                      </div>
+                      <div class="hooper-bracket hooper-bracket--high">
+                        <strong>15 a 20 pontos</strong>
+                        <span>Alerta crítico de sobrecarga não-funcional. Queda iminente de rendimento e imunidade.</span>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+
+                <article class="science-chapter">
+                  <span class="science-chapter__number">3</span>
+                  <div class="science-chapter__content">
+                    <h3>Individualização Estatística e a Aplicação do Z-Score</h3>
+                    <p>
+                      Em categorias de base e esportes coletivos (Basquete, Vôlei, Futsal, Natação), a heterogeneidade biológica entre atletas de mesma idade cronológica é notável. Conforme demonstrado por <strong>Bourdon et al. (2017)</strong> e <strong>Foster et al. (2001)</strong>, uma mesma sessão de treinamento produz impactos internos substancialmente diferentes em cada indivíduo.
+                    </p>
+                    <p>
+                      O modelo estatístico adotado no Dashboard Olympico calcula o <strong>Z-Score intra-individual</strong>, comparando a média móvel das últimas 3 respostas do atleta com a sua própria distribuição histórica habitual:
+                    </p>
+                    <p class="science-formula">
+                      <code>Z = (Valor_Atual - Média_Pessoal) / Desvio_Padrão_Pessoal</code>
+                    </p>
+                    <p>
+                      Isso garante que um atleta naturalmente mais resistente não gere falsos alertas, enquanto um atleta que costuma relatar baixo estresse mas repentinamente salta para escores médios seja prontamente sinalizado (desvio &ge; 1.8&sigma;), permitindo intervenção preventiva cirúrgica antes da manifestação de uma lesão.
+                    </p>
+                  </div>
+                </article>
+
+                <article class="science-chapter">
+                  <span class="science-chapter__number">4</span>
+                  <div class="science-chapter__content">
+                    <h3>Referências Bibliográficas Peer-Reviewed (Google Acadêmico)</h3>
+                    <ol class="science-references-list">
+                      <li>
+                        <strong>Gabbett, T. J. (2016).</strong> The training—injury prevention paradox: should athletes be training smarter and harder? <em>British Journal of Sports Medicine</em>, 50(5), 273-280. DOI: <a href="https://doi.org/10.1136/bjsports-2015-095788" target="_blank" rel="noreferrer">10.1136/bjsports-2015-095788</a>
+                      </li>
+                      <li>
+                        <strong>Williams, S., West, S., Cross, M. J., & Stokes, K. A. (2017).</strong> Better way to determine the acute:chronic workload ratio? <em>British Journal of Sports Medicine</em>, 51(3), 209-210. DOI: <a href="https://doi.org/10.1136/bjsports-2016-096589" target="_blank" rel="noreferrer">10.1136/bjsports-2016-096589</a>
+                      </li>
+                      <li>
+                        <strong>Hooper, S. L., & Mackinnon, L. T. (1995).</strong> Monitoring overtraining in athletes: recommendations. <em>Sports Medicine</em>, 20(5), 321-327. DOI: <a href="https://doi.org/10.2165/00007256-199520050-00003" target="_blank" rel="noreferrer">10.2165/00007256-199520050-00003</a>
+                      </li>
+                      <li>
+                        <strong>Saw, A. E., Main, L. C., & Gastin, P. B. (2016).</strong> Monitoring the athlete training response: subjective self-reported measures reflect changes in training load better than objective markers. <em>British Journal of Sports Medicine</em>, 50(5), 281-291. DOI: <a href="https://doi.org/10.1136/bjsports-2015-094758" target="_blank" rel="noreferrer">10.1136/bjsports-2015-094758</a>
+                      </li>
+                      <li>
+                        <strong>Hulin, B. T., Gabbett, T. J., Lawson, D. W., Caputi, P., & Sampson, J. A. (2016).</strong> The acute:chronic workload ratio predicts injury: high chronic-workload may decrease injury risk in elite rugby league players. <em>British Journal of Sports Medicine</em>, 50(4), 231-236.
+                      </li>
+                      <li>
+                        <strong>Bourdon, P. C., Cardinale, M., Murray, A., Gastin, P., Kellmann, M., Varley, M. C., ... & Cable, N. T. (2017).</strong> Monitoring athlete training loads: consensus statement. <em>International Journal of Sports Physiology and Performance</em>, 12(s2), S2-161.
+                      </li>
+                      <li>
+                        <strong>Foster, C., Florhaug, J. A., Franklin, J., Gottschall, L., Hrovatin, L. A., Parker, S., ... & Dodge, C. (2001).</strong> A new approach to monitoring exercise training. <em>Journal of Strength and Conditioning Research</em>, 15(1), 109-115.
+                      </li>
+                      <li>
+                        <strong>Halson, S. L. (2014).</strong> Monitoring training load to understand fatigue in athletes. <em>Sports Medicine</em>, 44(2), 139-147. DOI: <a href="https://doi.org/10.1007/s40279-014-0253-z" target="_blank" rel="noreferrer">10.1007/s40279-014-0253-z</a>
+                      </li>
+                    </ol>
+                  </div>
+                </article>
+              </section>
             </article>
           </section>
 

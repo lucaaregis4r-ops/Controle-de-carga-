@@ -939,3 +939,420 @@ summary:focus-visible,
   color: #9f1239;
 }
 
+
+/* ==========================================================================
+   CIÊNCIA DO ESPORTE & METODOLOGIA (ACWR, HOOPER, Z-SCORE)
+   ========================================================================== */
+.topbar__science-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--royal);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.topbar__science-btn:hover {
+  background: var(--surface-blue);
+  border-color: var(--royal);
+}
+
+.science-workspace {
+  display: grid;
+  gap: 24px;
+}
+
+.science-shell {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 32px;
+}
+
+.science-header {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 24px;
+}
+
+.science-badge {
+  display: inline-block;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--royal);
+  background: var(--surface-blue);
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-bottom: 12px;
+}
+
+.science-header h2 {
+  font-size: 1.6rem;
+  color: var(--navy);
+  margin: 0 0 10px;
+  line-height: 1.25;
+}
+
+.science-lead {
+  font-size: 1.02rem;
+  color: var(--muted);
+  line-height: 1.6;
+  max-width: 900px;
+  margin: 0;
+}
+
+/* Semáforo Prático do Treinador */
+.science-quickguide {
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 24px;
+}
+
+.science-quickguide__header h3 {
+  font-size: 1.2rem;
+  color: var(--navy);
+  margin: 0 0 6px;
+}
+
+.science-quickguide__header p {
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin: 0 0 20px;
+}
+
+.science-traffic-lights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+}
+
+.traffic-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.traffic-card--green {
+  border-top: 5px solid #10b981;
+}
+
+.traffic-card--yellow {
+  border-top: 5px solid #f59e0b;
+}
+
+.traffic-card--red {
+  border-top: 5px solid #ef4444;
+}
+
+.traffic-card__badge {
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.traffic-card--green .traffic-card__badge {
+  color: #047857;
+}
+
+.traffic-card--yellow .traffic-card__badge {
+  color: #b45309;
+}
+
+.traffic-card--red .traffic-card__badge {
+  color: #b91c1c;
+}
+
+.traffic-card__metrics {
+  font-size: 0.78rem;
+  font-family: monospace;
+  background: var(--ice);
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--navy);
+  font-weight: 600;
+}
+
+.traffic-card h4 {
+  font-size: 0.98rem;
+  color: var(--navy);
+  margin: 0;
+  line-height: 1.35;
+}
+
+.traffic-card p {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.traffic-card__directive {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+  font-size: 0.84rem;
+}
+
+.traffic-card__directive strong {
+  display: block;
+  color: var(--navy);
+  margin-bottom: 6px;
+}
+
+.traffic-card__directive ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.traffic-card__directive li {
+  margin-bottom: 4px;
+}
+
+/* Ensaio Científico e Capítulos */
+.science-essay {
+  display: grid;
+  gap: 28px;
+}
+
+.science-chapter {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.science-chapter:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.science-chapter__number {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--navy);
+  color: #fff;
+  font-size: 1.15rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(23, 29, 73, 0.18);
+}
+
+.science-chapter__content h3 {
+  font-size: 1.25rem;
+  color: var(--navy);
+  margin: 0 0 14px;
+}
+
+.science-chapter__content h4 {
+  font-size: 1.02rem;
+  color: var(--royal);
+  margin: 20px 0 8px;
+}
+
+.science-chapter__content p {
+  font-size: 0.92rem;
+  line-height: 1.65;
+  color: var(--text);
+  margin: 0 0 14px;
+}
+
+.science-quote {
+  background: #fbfcfe;
+  border-left: 4px solid var(--royal);
+  padding: 14px 18px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-style: italic;
+  color: var(--navy-2);
+  margin: 0 0 16px;
+}
+
+.science-quote cite {
+  display: block;
+  margin-top: 8px;
+  font-style: normal;
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--royal);
+}
+
+/* Tabelas e Escalas Normativas */
+.science-zones-table {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.zone-row {
+  display: grid;
+  grid-template-columns: 110px 200px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 0.86rem;
+}
+
+.zone-pill {
+  font-weight: 800;
+  font-family: monospace;
+  padding: 4px 8px;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 0.82rem;
+}
+
+.zone-row--under .zone-pill {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.zone-row--sweet .zone-pill {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.zone-row--warning .zone-pill {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.zone-row--danger .zone-pill {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.zone-row strong {
+  color: var(--navy);
+  font-weight: 700;
+}
+
+.zone-row span:last-child {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.science-formula {
+  background: #0f172a;
+  color: #38bdf8;
+  padding: 14px 18px;
+  border-radius: var(--radius-sm);
+  font-family: monospace;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  margin: 16px 0;
+}
+
+.science-formula small {
+  color: #94a3b8;
+  display: block;
+  margin-top: 6px;
+  font-size: 0.78rem;
+}
+
+.science-dimensions {
+  margin: 14px 0;
+  padding-left: 20px;
+  line-height: 1.65;
+  font-size: 0.9rem;
+}
+
+.science-dimensions strong {
+  color: var(--navy);
+}
+
+.science-hooper-scale {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.hooper-bracket {
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.84rem;
+}
+
+.hooper-bracket strong {
+  font-size: 0.92rem;
+}
+
+.hooper-bracket--low {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+
+.hooper-bracket--mid {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.hooper-bracket--high {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+.science-references-list {
+  margin: 14px 0 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 12px;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.science-references-list li strong {
+  color: var(--navy);
+}
+
+.science-references-list a {
+  color: var(--royal);
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+@media (max-width: 900px) {
+  .science-chapter {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .zone-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}

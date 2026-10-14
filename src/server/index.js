@@ -1996,6 +1996,18 @@ function buildOverviewPageHtml(
   `;
 }
 
+function getCoachActionBadge(item) {
+  const pain = item.metrics && item.metrics.pain;
+  const stress = item.metrics && item.metrics.stress;
+  if (item.tone === "high" || (Number.isFinite(pain) && pain >= 6)) {
+    return `<span class="coach-action coach-action--danger">Reduzir vol. 20-30% · Avaliar Fisio</span>`;
+  }
+  if (item.tone === "medium" || (Number.isFinite(stress) && stress >= 3.8)) {
+    return `<span class="coach-action coach-action--warning">Dosar intensidade · Monitorar</span>`;
+  }
+  return `<span class="coach-action coach-action--ok">Manter rotina · Acompanhar</span>`;
+}
+
 function buildTeamReportSection(
   athletes,
   categories,
@@ -2018,6 +2030,43 @@ function buildTeamReportSection(
   const psychologyItems = getTeamClinicalItems(psychologyDemands, teamName);
   const attendanceSummary = summarizeTeamAttendance(attendance, teamName);
   const hasLoadReport = teamAthletes.length > 0;
+
+  const teamAcwrs = teamAthletes
+    .map((athlete) => Analysis.calculateACWR_EWMA(athlete.entries, "loadScore"))
+    .filter((val) => Number.isFinite(val));
+  const teamAcwrMean = teamAcwrs.length
+    ? roundNumber(teamAcwrs.reduce((acc, v) => acc + v, 0) / teamAcwrs.length, 2)
+    : null;
+
+  const teamHooperScores = teamAthletes
+    .map((athlete) => {
+      const recent = Analysis.recentEntries(athlete, updatedAtIso)[0];
+      const h = recent ? Analysis.computeHooperIndex(recent) : null;
+      return h ? h.total : null;
+    })
+    .filter((val) => Number.isFinite(val));
+  const teamHooperMean = teamHooperScores.length
+    ? roundNumber(teamHooperScores.reduce((acc, v) => acc + v, 0) / teamHooperScores.length, 1)
+    : null;
+
+  let acwrDisplay = "N/D";
+  let acwrSub = "Base em formação";
+  if (teamAcwrMean !== null) {
+    acwrDisplay = `${teamAcwrMean}`;
+    if (teamAcwrMean < 0.8) acwrSub = "Subtreino (<0.8)";
+    else if (teamAcwrMean <= 1.3) acwrSub = "Ótimo (Sweet Spot)";
+    else if (teamAcwrMean <= 1.49) acwrSub = "Alerta (1.31-1.49)";
+    else acwrSub = "Risco (≥1.50)";
+  }
+
+  let hooperDisplay = "N/D";
+  let hooperSub = "Sem respostas";
+  if (teamHooperMean !== null) {
+    hooperDisplay = `${teamHooperMean} / 20`;
+    if (teamHooperMean <= 11) hooperSub = "Boa prontidão";
+    else if (teamHooperMean <= 14) hooperSub = "Fadiga moderada";
+    else hooperSub = "Alerta de sobrecarga";
+  }
 
   if (!hasLoadReport && physioItems.length) {
     const immediateCount = physioItems.filter((item) => normalizeKey(item.notes).includes("ATENDIMENTO IMEDIATO")).length;
@@ -2116,7 +2165,8 @@ function buildTeamReportSection(
       <section class="report-stats report-stats--primary">
         <article class="report-stat"><span>Desgaste percebido</span><strong>${escapeHtml(formatRatio(loadMedian))}</strong><small>Mediana · 7 dias</small></article>
         <article class="report-stat"><span>Recuperação</span><strong>${escapeHtml(formatRatio(recoveryMean))}</strong><small>Média · 7 dias</small></article>
-        <article class="report-stat"><span>Estresse</span><strong>${escapeHtml(formatRatio(stressMean))}</strong><small>Média · 7 dias</small></article>
+        <article class="report-stat"><span>Razão ACWR (EWMA)</span><strong>${escapeHtml(acwrDisplay)}</strong><small>${escapeHtml(acwrSub)}</small></article>
+        <article class="report-stat"><span>Índice Hooper</span><strong>${escapeHtml(hooperDisplay)}</strong><small>${escapeHtml(hooperSub)}</small></article>
         <article class="report-stat report-stat--attendance"><span>Presença PF (7 dias)</span><strong>${escapeHtml(formatReportAttendancePercentage(attendanceSummary))}</strong><small>${escapeHtml(getReportAttendanceNote(attendanceSummary))}</small></article>
       </section>
       <section class="report-main-grid report-main-grid--editorial">
@@ -2125,9 +2175,9 @@ function buildTeamReportSection(
           <div class="report-summary-list">${buildWeeklyInterpretationItems(baseline, recoveryMean, stressMean, attentionItems).slice(0, 4).map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div>
         </article>
       </section>
-      <article class="report-panel report-attention-table"><div class="report-panel__head"><p>Atletas em atenção</p><span>${attentionItems.length} com critérios na semana</span></div>
-        <table><thead><tr><th>Atleta</th><th>Situação</th><th>Desgaste</th><th>Recuperação</th><th>Estresse</th><th>Principal sinal</th></tr></thead><tbody>
-        ${visibleAttention.length ? visibleAttention.map((item) => `<tr><td>${escapeHtml(item.athlete.name)}</td><td><span class="attention-badge attention-badge--${item.tone}">${escapeHtml(item.level)}</span></td><td>${escapeHtml(formatRatio(item.metrics.load))}</td><td>${escapeHtml(formatRatio(item.metrics.recovery))}</td><td>${escapeHtml(formatRatio(item.metrics.stress))}</td><td>${escapeHtml(item.primaryReason)}</td></tr>`).join("") : '<tr><td colspan="6">Nenhum atleta atende aos critérios nesta semana.</td></tr>'}
+      <article class="report-panel report-attention-table"><div class="report-panel__head"><p>Atletas em atenção & Diretriz Prática</p><span>${attentionItems.length} com critérios na semana</span></div>
+        <table><thead><tr><th>Atleta</th><th>Situação</th><th>Desgaste</th><th>Recuperação</th><th>Estresse</th><th>Principal sinal</th><th>Conduta do Treinador</th></tr></thead><tbody>
+        ${visibleAttention.length ? visibleAttention.map((item) => `<tr><td>${escapeHtml(item.athlete.name)}</td><td><span class="attention-badge attention-badge--${item.tone}">${escapeHtml(item.level)}</span></td><td>${escapeHtml(formatRatio(item.metrics.load))}</td><td>${escapeHtml(formatRatio(item.metrics.recovery))}</td><td>${escapeHtml(formatRatio(item.metrics.stress))}</td><td>${escapeHtml(item.primaryReason)}</td><td>${getCoachActionBadge(item)}</td></tr>`).join("") : '<tr><td colspan="7">Nenhum atleta atende aos critérios nesta semana.</td></tr>'}
         </tbody></table>${attentionItems.length > 5 ? `<small>+ ${attentionItems.length - 5} atleta(s) em acompanhamento no dashboard.</small>` : ""}
       </article>
     </section>
@@ -2135,17 +2185,15 @@ function buildTeamReportSection(
       <header class="report-header report-header--compact"><div class="report-header__brand"><img src="${crestDataUrl || ""}" alt="" /><div><p class="report-eyebrow">OLYMPICO CLUB</p><h1>${escapeHtml(teamName)}</h1><p class="report-subtitle">CONTEXTO INTERDISCIPLINAR</p></div></div><div class="report-header__meta"><strong>${escapeHtml(buildWeeklyRangeLabel(updatedAtIso))}</strong></div></header>
       <section class="report-clinical-grid ${clinicalClass}">${physioItems.length || !psychologyItems.length ? buildPhysioDemandPanelHtml(teamName, physioDemands) : ""}${psychologyItems.length ? buildPsychologyDemandPanelHtml(teamName, psychologyDemands) : '<article class="report-panel report-panel--psychology"><div class="report-panel__head"><p>Psicologia</p></div><p class="report-empty-note">Sem registros para esta equipe.</p></article>'}</section>
       <section class="report-support-grid">
-        <article class="report-panel"><div class="report-panel__head"><p>Contexto histórico da equipe</p></div><div class="report-method-list"><span>Média das 3 respostas atuais: <strong>${escapeHtml(formatRatio(baseline.currentTeamAverage))}</strong></span><span>Padrão pessoal da equipe: <strong>${escapeHtml(baseline.teamHistoryBand)}</strong></span><span>Percentil histórico: <strong>${Number.isFinite(baseline.teamHistoryPercentile) ? `${baseline.teamHistoryPercentile}%` : "Base histórica insuficiente"}</strong> · ${baseline.baselineCount} janelas anteriores</span><span>Recuperação semanal ${escapeHtml(formatRatio(recoveryMean))} · Estresse semanal ${escapeHtml(formatRatio(stressMean))}</span></div></article>
+        <article class="report-panel"><div class="report-panel__head"><p>Contexto histórico da equipe</p></div><div class="report-method-list"><span>Média das 3 respostas atuais: <strong>${escapeHtml(formatRatio(baseline.currentTeamAverage))}</strong></span><span>Padrão pessoal da equipe: <strong>${escapeHtml(baseline.teamHistoryBand)}</strong></span><span>Percentil histórico: <strong>${Number.isFinite(baseline.teamHistoryPercentile) ? `${baseline.teamHistoryPercentile}%` : "Base histórica insuficiente"}</strong> · ${baseline.baselineCount} janelas anteriores</span><span>ACWR Coletivo: <strong>${escapeHtml(acwrDisplay)} (${escapeHtml(acwrSub)})</strong> · Hooper: <strong>${escapeHtml(hooperDisplay)}</strong></span></div></article>
         <article class="report-panel"><div class="report-panel__head"><p>Cobertura dos dados</p></div><div class="report-method-list"><span>${weeklyCount} de ${teamAthletes.length} atletas com check-in na semana</span><span>${eligible.length} atletas com check-in nos últimos 20 dias</span><span>Fisioterapia: ${physioItems.length} registro(s) · Psicologia: ${psychologyItems.length} registro(s)</span><span>Presença PF: ${escapeHtml(getReportAttendanceNote(attendanceSummary))}</span></div></article>
       </section>
       <article class="report-panel report-methodology"><div class="report-panel__head"><p>Nota metodológica</p></div><div class="report-method-list">
-        <span><strong>Desgaste percebido:</strong> índice de autorrelatos de dor, fadiga, sono, dor muscular, estresse e humor. Não equivale a carga externa ou interna de treinamento.</span>
-        <span><strong>Recuperação percebida:</strong> síntese dos domínios orientada para que valores maiores indiquem melhor condição percebida.</span>
-        <span><strong>Média das 3 últimas respostas:</strong> média dos três check-ins válidos mais recentes.</span>
-        <span><strong>Percentil histórico:</strong> posição da janela atual diante das anteriores da própria equipe, exibida com pelo menos 6 janelas anteriores.</span>
-        <span><strong>Percentil da equipe:</strong> contexto relativo entre pelo menos 6 atletas elegíveis; não gera alerta isoladamente.</span>
-        <span><strong>Atletas em atenção:</strong> valores absolutos, persistência, padrão pessoal e combinação entre domínios.</span>
-        <small>Check-ins são autorrelatos e devem ser interpretados com observação profissional, preparação física, fisioterapia e psicologia.</small>
+        <span><strong>Diretrizes da Comissão Técnica:</strong> 🟢 Verde (ACWR 0.8–1.3, Hooper &lt; 12): 100% liberado · 🟡 Amarelo (ACWR 1.3–1.5, Hooper 12–15): Dosar saltos/impacto · 🔴 Vermelho (ACWR &ge; 1.5, Hooper &ge; 16, Dor &ge; 6): Reduzir volume 20–30%, avaliar Fisioterapia.</span>
+        <span><strong>ACWR Exponencial (EWMA):</strong> Razão Aguda:Crônica ponderada por decaimento exponencial (&lambda; agudo=0.25, crônico=0.07). Williams et al. (2017), <em>Br J Sports Med</em>; Gabbett, T. J. (2016), <em>Br J Sports Med</em>.</span>
+        <span><strong>Índice Hooper (4–20):</strong> Somatória de Fadiga, Sono, Dor Muscular e Estresse. Saw et al. (2016), <em>Br J Sports Med</em>; Hooper & Mackinnon (1995), <em>Sports Med</em>.</span>
+        <span><strong>Z-Score Intra-individual:</strong> Monitora o desvio em relação ao histórico próprio (&ge; 1.8&sigma;), identificando picos agudos sem penalizar atletas naturalmente tolerantes.</span>
+        <span><strong>Desgaste percebido:</strong> índice de autorrelatos de dor, fadiga, sono, dor muscular, estresse e humor. Check-ins são autorrelatos e devem ser interpretados em conjunto com preparação física, fisioterapia e psicologia.</span>
       </div></article>
     </section>`;
 }
@@ -2824,10 +2872,10 @@ function buildPrintReportHtml(
         .report-panorama__meta { min-width: 34mm; display: grid; text-align: right; }
         .report-panorama__meta strong { color: var(--report-blue); font-size: 18px; }
         .report-panorama__meta span { color: var(--report-muted); font-size: 9px; }
-        .report-stats--primary { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2mm; margin-bottom: 3mm; }
-        .report-stat { border: 1px solid var(--report-line); border-radius: 2mm; padding: 2.5mm 3mm; box-shadow: none; }
-        .report-stat span { font-size: 9px; letter-spacing: .06em; color: var(--report-muted); }
-        .report-stat strong { font-size: 20px; }
+        .report-stats--primary { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2mm; margin-bottom: 3mm; }
+        .report-stat { border: 1px solid var(--report-line); border-radius: 2mm; padding: 2.2mm 2.8mm; box-shadow: none; }
+        .report-stat span { font-size: 8.5px; letter-spacing: .05em; color: var(--report-muted); }
+        .report-stat strong { font-size: 19px; }
         .report-stat small { font-size: 8px; }
         .report-main-grid--editorial { grid-template-columns: 1.4fr .8fr; gap: 2.5mm; align-items: stretch; margin-bottom: 3mm; }
         .report-main-grid--editorial .report-panel { min-height: 63mm; }
@@ -2836,15 +2884,19 @@ function buildPrintReportHtml(
         .report-summary-list p:last-child { border-bottom: 0; }
         .report-panel__head p { color: var(--report-navy); font-size: 13px; }
         .report-panel__head span { color: var(--report-muted); font-size: 9px; }
-        .report-attention-table table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
-        .report-attention-table th { background: var(--report-navy-2); color: #fff; text-align: left; padding: 1.8mm; }
-        .report-attention-table td { padding: 1.8mm; border-bottom: 1px solid var(--report-line); overflow-wrap: anywhere; }
-        .report-attention-table th:first-child, .report-attention-table td:first-child { width: 26%; font-weight: 700; }
-        .report-attention-table th:last-child, .report-attention-table td:last-child { width: 26%; }
+        .report-attention-table table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 9.5px; }
+        .report-attention-table th { background: var(--report-navy-2); color: #fff; text-align: left; padding: 1.6mm; font-size: 8.5px; }
+        .report-attention-table td { padding: 1.6mm; border-bottom: 1px solid var(--report-line); overflow-wrap: anywhere; }
+        .report-attention-table th:first-child, .report-attention-table td:first-child { width: 22%; font-weight: 700; }
+        .report-attention-table th:last-child, .report-attention-table td:last-child { width: 22%; }
         .report-attention-table small { display: block; margin-top: 1.5mm; color: var(--report-muted); }
-        .attention-badge { display: inline-block; padding: 1mm 1.5mm; border-radius: 1mm; white-space: nowrap; color: var(--report-blue); background: #eaf0fa; }
+        .attention-badge { display: inline-block; padding: 0.8mm 1.4mm; border-radius: 1mm; white-space: nowrap; font-size: 8px; font-weight: 700; color: var(--report-blue); background: #eaf0fa; }
         .attention-badge--high { color: var(--report-red); background: #fff0f2; }
         .attention-badge--medium { color: #946019; background: #fff4df; }
+        .coach-action { display: inline-block; padding: 0.8mm 1.5mm; border-radius: 1mm; font-size: 7.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; white-space: nowrap; }
+        .coach-action--danger { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+        .coach-action--warning { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+        .coach-action--ok { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
         .report-page--team-second { height: auto; overflow: visible; }
         .report-page--team-second .report-clinical-grid { margin-top: 0; grid-template-columns: 1.5fr 1fr; }
         .report-page--team-second .report-clinical-grid--single, .report-page--clinical-only .report-clinical-grid--single { grid-template-columns: 1.7fr .6fr; }

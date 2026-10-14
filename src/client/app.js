@@ -1,9 +1,12 @@
 const METRICS = [
   { key: "loadScore", label: "Desgaste percebido", max: 5, color: "#4246a6" },
   { key: "recoveryScore", label: "Recuperação", max: 5, color: "#168a64" },
-  { key: "painLevel", label: "Dor", max: 10, color: "#df3046" },
+  { key: "hooperIndex", label: "Índice Hooper (4–20)", max: 20, color: "#3b82f6" },
+  { key: "acwr", label: "ACWR (EWMA)", max: 3, color: "#f59e0b" },
+  { key: "zScore", label: "Z-Score Desgaste", max: 4, min: -3, color: "#ec4899" },
+  { key: "painLevel", label: "Dor (0–10)", max: 10, color: "#df3046" },
   { key: "fatigueScore", label: "Fadiga", max: 5, color: "#d98418" },
-  { key: "sleepScore", label: "Insônia", max: 5, color: "#4777c9" },
+  { key: "sleepScore", label: "Insônia/Sono", max: 5, color: "#4777c9" },
   { key: "muscleScore", label: "Dor muscular", max: 5, color: "#7856b8" },
   { key: "stressScore", label: "Estresse", max: 5, color: "#b9427f" },
   { key: "moodScore", label: "Humor", max: 5, color: "#168d82" },
@@ -126,12 +129,15 @@ const elements = {
   navCalendarButton: document.querySelector("#nav-calendar-button"),
   navPhysiotherapyButton: document.querySelector("#nav-physiotherapy-button"),
   navAttendanceButton: document.querySelector("#nav-attendance-button"),
+  navScienceButton: document.querySelector("#nav-science-button"),
+  quickScienceButton: document.querySelector("#quick-science-button"),
   topbarEyebrow: document.querySelector("#topbar-eyebrow"),
   topbarTitle: document.querySelector("#topbar-title"),
   topbarActions: document.querySelector("#topbar-actions"),
   panelWorkspace: document.querySelector("#panel-workspace"),
   calendarWorkspace: document.querySelector("#calendar-workspace"),
   physiotherapyWorkspace: document.querySelector("#physiotherapy-workspace"),
+  scienceWorkspace: document.querySelector("#science-workspace"),
   physiotherapyUpdatedAt: document.querySelector("#physiotherapy-updated-at"),
   physiotherapyRefresh: document.querySelector("#physiotherapy-refresh"),
   physiotherapySearch: document.querySelector("#physiotherapy-search"),
@@ -665,7 +671,12 @@ function filterEntriesByPeriod(entries, period) {
 }
 
 function getMetricValue(entry, metricKey) {
-  return entry?.[metricKey];
+  if (!entry) return null;
+  if (metricKey === "hooperIndex") {
+    const hooper = OlympicoAnalysis.computeHooperIndex(entry);
+    return hooper?.total ?? null;
+  }
+  return entry[metricKey];
 }
 
 function getMetricDisplayValue(entry, metricKey) {
@@ -683,15 +694,21 @@ function getMetricDisplayValue(entry, metricKey) {
 }
 
 function getMetricDisplayMax(metricKey) {
+  if (metricKey === "hooperIndex") return 20;
+  if (metricKey === "acwr") return 3;
+  if (metricKey === "zScore") return 4;
   return metricKey === "painLevel" ? 5 : getMetricByKey(metricKey)?.max || 5;
 }
 
 function getLineChartRange(metricKeys) {
-  const maxValue = Math.max(...metricKeys.map((metricKey) => getMetricDisplayMax(metricKey)), 5);
+  const hasHooper = metricKeys.includes("hooperIndex");
+  const hasZ = metricKeys.includes("zScore");
+  const maxValues = metricKeys.map((k) => getMetricDisplayMax(k));
+  const maxValue = Math.max(...maxValues, 5);
   return {
-    min: 0,
-    max: maxValue,
-    stepSize: maxValue <= 5 ? 1 : 2,
+    min: hasZ ? -3 : 0,
+    max: hasHooper ? 20 : maxValue,
+    stepSize: hasHooper ? 4 : maxValue <= 5 ? 1 : 2,
   };
 }
 
@@ -1259,19 +1276,37 @@ function destroyCharts() {
 
 function createTimelineChartForAthlete(athlete) {
   const metricKeys = state.controls.timeline.metrics;
-  const entries = filterEntriesByPeriod(athlete.entries, state.controls.timeline.period)
-    .slice()
-    .reverse();
+  const filteredEntries = filterEntriesByPeriod(athlete.entries, state.controls.timeline.period);
+  const chronological = filteredEntries.slice().reverse();
 
   state.charts.timeline = new Chart(elements.timelineCanvas, {
     type: "line",
     data: {
-      labels: entries.map((entry) => entry.timestampDisplay || entry.reportedDate || "Sem data"),
+      labels: chronological.map((entry) => entry.timestampDisplay || entry.reportedDate || "Sem data"),
       datasets: metricKeys.map((metricKey) => {
         const metric = getMetricByKey(metricKey);
+        const data = chronological.map((entry) => {
+          if (metricKey === "hooperIndex") {
+            return OlympicoAnalysis.computeHooperIndex(entry)?.total ?? null;
+          }
+          if (metricKey === "acwr") {
+            const subEntries = (athlete.entries || []).filter(
+              (e) => Date.parse(e.timestampIso || "") <= Date.parse(entry.timestampIso || "")
+            );
+            return OlympicoAnalysis.calculateACWR_EWMA(subEntries, "loadScore", 3);
+          }
+          if (metricKey === "zScore") {
+            const subEntries = (athlete.entries || []).filter(
+              (e) => Date.parse(e.timestampIso || "") <= Date.parse(entry.timestampIso || "")
+            );
+            return OlympicoAnalysis.personalBaseline({ entries: subEntries }, "loadScore")?.zScore ?? null;
+          }
+          return getMetricDisplayValue(entry, metricKey);
+        });
+
         return {
           label: metric.label,
-          data: entries.map((entry) => getMetricDisplayValue(entry, metricKey)),
+          data,
           borderColor: metric.color,
           backgroundColor: `${metric.color}33`,
           tension: 0.35,
@@ -1295,7 +1330,7 @@ function createTimelineChartForTeam(teamName) {
       if (!grouped.has(key)) {
         grouped.set(key, []);
       }
-      grouped.get(key).push(entry);
+      grouped.get(key).push({ entry, athlete });
     });
   });
 
@@ -1313,9 +1348,39 @@ function createTimelineChartForTeam(teamName) {
         const metric = getMetricByKey(metricKey);
         return {
           label: metric.label,
-          data: labels.map((label) =>
-            average((grouped.get(label) || []).map((entry) => getMetricDisplayValue(entry, metricKey)))
-          ),
+          data: labels.map((label) => {
+            const items = grouped.get(label) || [];
+            if (!items.length) return null;
+            if (metricKey === "hooperIndex") {
+              const hooperVals = items
+                .map(({ entry }) => OlympicoAnalysis.computeHooperIndex(entry)?.total)
+                .filter(Number.isFinite);
+              return hooperVals.length ? roundNumber(average(hooperVals), 2) : null;
+            }
+            if (metricKey === "acwr") {
+              const acwrVals = items
+                .map(({ athlete, entry }) => {
+                  const subEntries = (athlete.entries || []).filter(
+                    (e) => Date.parse(e.timestampIso || "") <= Date.parse(entry.timestampIso || "")
+                  );
+                  return OlympicoAnalysis.calculateACWR_EWMA(subEntries, "loadScore", 3);
+                })
+                .filter(Number.isFinite);
+              return acwrVals.length ? roundNumber(average(acwrVals), 2) : null;
+            }
+            if (metricKey === "zScore") {
+              const zVals = items
+                .map(({ athlete, entry }) => {
+                  const subEntries = (athlete.entries || []).filter(
+                    (e) => Date.parse(e.timestampIso || "") <= Date.parse(entry.timestampIso || "")
+                  );
+                  return OlympicoAnalysis.personalBaseline({ entries: subEntries }, "loadScore")?.zScore;
+                })
+                .filter(Number.isFinite);
+              return zVals.length ? roundNumber(average(zVals), 2) : null;
+            }
+            return average(items.map(({ entry }) => getMetricDisplayValue(entry, metricKey)));
+          }),
           borderColor: metric.color,
           backgroundColor: `${metric.color}33`,
           tension: 0.35,
@@ -1349,6 +1414,26 @@ function buildLineOptions(metricKeys = []) {
           padding: 18,
         },
       },
+      tooltip: {
+        callbacks: {
+          label: function (context) {
+            const val = context.raw;
+            if (val === null || val === undefined) return `${context.dataset.label}: N/A`;
+            if (context.dataset.label.includes("ACWR")) {
+              const zone = OlympicoAnalysis.getACWRZone(val);
+              return `ACWR: ${val} (${zone.label})`;
+            }
+            if (context.dataset.label.includes("Hooper")) {
+              const status = val >= 16 ? "Crítico" : val >= 14 ? "Atenção" : "Normal";
+              return `Índice Hooper: ${val}/20 (${status})`;
+            }
+            if (context.dataset.label.includes("Z-Score")) {
+              return `Z-Score: ${val > 0 ? "+" : ""}${val} σ`;
+            }
+            return `${context.dataset.label}: ${val}`;
+          },
+        },
+      },
     },
     scales: {
       y: {
@@ -1378,11 +1463,17 @@ function normalizeForRadar(metricKey, value) {
   if (!Number.isFinite(value)) {
     return null;
   }
+  if (metricKey === "hooperIndex") {
+    return roundNumber((value / 20) * 5, 2);
+  }
+  if (metricKey === "acwr") {
+    return roundNumber(Math.min(5, Math.max(0, value * 2.5)), 2);
+  }
+  if (metricKey === "zScore") {
+    return roundNumber(Math.max(0, Math.min(5, value + 2.5)), 2);
+  }
   if (metricKey === "painLevel") {
     return value / 2;
-  }
-  if (metricKey === "loadScore") {
-    return value;
   }
   return value;
 }
@@ -2521,17 +2612,28 @@ function renderActiveWorkspace() {
   const isCalendar = state.activeSection === "calendar";
   const isPhysiotherapy = state.activeSection === "physiotherapy";
   const isAttendance = state.activeSection === "attendance";
-  elements.panelWorkspace.classList.toggle("hidden", isCalendar || isPhysiotherapy || isAttendance);
+  const isScience = state.activeSection === "science";
+  elements.panelWorkspace.classList.toggle("hidden", isCalendar || isPhysiotherapy || isAttendance || isScience);
   elements.calendarWorkspace.classList.toggle("hidden", !isCalendar);
   elements.physiotherapyWorkspace.classList.toggle("hidden", !isPhysiotherapy);
   elements.attendanceWorkspace.classList.toggle("hidden", !isAttendance);
-  elements.stats.classList.toggle("hidden", isPhysiotherapy || isAttendance);
-  elements.topbarActions.classList.toggle("hidden", isPhysiotherapy || isAttendance);
-  elements.topbarEyebrow.textContent = isPhysiotherapy ? "Núcleo de saúde" : "Centro de análise";
-  elements.topbarTitle.textContent = isPhysiotherapy ? "Fisioterapia" : "Atletas e equipes";
-  if (isAttendance) {
+  if (elements.scienceWorkspace) {
+    elements.scienceWorkspace.classList.toggle("hidden", !isScience);
+  }
+  elements.stats.classList.toggle("hidden", isPhysiotherapy || isAttendance || isScience);
+  elements.topbarActions.classList.toggle("hidden", isPhysiotherapy || isAttendance || isScience);
+  if (isScience) {
+    elements.topbarEyebrow.textContent = "Ciência do Esporte";
+    elements.topbarTitle.textContent = "Fundamentação & Diretrizes Práticas";
+  } else if (isPhysiotherapy) {
+    elements.topbarEyebrow.textContent = "Núcleo de saúde";
+    elements.topbarTitle.textContent = "Fisioterapia";
+  } else if (isAttendance) {
     elements.topbarEyebrow.textContent = "Núcleo de performance";
     elements.topbarTitle.textContent = "Preparação física";
+  } else {
+    elements.topbarEyebrow.textContent = "Centro de análise";
+    elements.topbarTitle.textContent = "Atletas e equipes";
   }
 
   if (isCalendar) {
@@ -2744,6 +2846,7 @@ function setSidebarActive(target) {
     calendar: elements.navCalendarButton,
     physiotherapy: elements.navPhysiotherapyButton,
     attendance: elements.navAttendanceButton,
+    science: elements.navScienceButton,
   };
 
   Object.entries(mapping).forEach(([key, button]) => {
@@ -3476,6 +3579,24 @@ elements.navAttendanceButton.addEventListener("click", () => {
   renderActiveWorkspace();
   elements.attendanceWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
 });
+
+if (elements.navScienceButton) {
+  elements.navScienceButton.addEventListener("click", () => {
+    state.activeSection = "science";
+    setSidebarActive("science");
+    renderActiveWorkspace();
+    elements.scienceWorkspace?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
+if (elements.quickScienceButton) {
+  elements.quickScienceButton.addEventListener("click", () => {
+    state.activeSection = "science";
+    setSidebarActive("science");
+    renderActiveWorkspace();
+    elements.scienceWorkspace?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
 
 elements.calendarTeamSelect.addEventListener("change", (event) => {
   state.selectedTeam = event.target.value;
