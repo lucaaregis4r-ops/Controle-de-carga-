@@ -1792,12 +1792,17 @@ function renderHighlightsForAthlete(athlete) {
   const rawBaseline = OlympicoAnalysis.personalBaseline(athlete, "loadScore");
   const acwrValue = OlympicoAnalysis.calculateACWR_EWMA(athlete.entries, "loadScore");
   const acwrLabel = acwrValue !== null ? String(acwrValue) : "Sem base suficiente";
+  const zScoreValue = rawBaseline && rawBaseline.zScore !== null && rawBaseline.zScore !== undefined ? rawBaseline.zScore : "N/A";
+
+  const hooperIndex = OlympicoAnalysis.calculateHooperIndex(athlete.latest);
+  const monotony = OlympicoAnalysis.calculateTrainingMonotony(athlete.entries, "loadScore", 7);
 
   const cards = [
     { label: "Desgaste percebido", value: eligible ? formatRatio(baseline.currentMovingAverage) : "Sem dado atual", note: "Média das 3 últimas respostas" },
     { label: "ACWR (Exponencial)", value: acwrLabel, note: "Razão de carga aguda-crônica" },
-    { label: "Z-Score Desgaste", value: rawBaseline.zScore !== null ? rawBaseline.zScore : "N/A", note: "Desvios do próprio histórico" },
-    { label: "Último check-in", value: athlete.lastCheckIn || "Sem data", note: eligible ? "Elegível para leitura atual" : "Histórico disponível" },
+    { label: "Índice de Hooper", value: hooperIndex !== null ? String(hooperIndex) : "N/A", note: "Estresse psicofisiológico agudo" },
+    { label: "Monotonia", value: monotony !== null ? String(monotony) : "N/A", note: "Variabilidade da carga semanal" },
+    { label: "Z-Score Desgaste", value: String(zScoreValue), note: "Desvios do próprio histórico" },
   ];
   elements.detailHighlights.innerHTML = cards.map((card) => `<article class="highlight"><p>${escapeHtml(card.label)}</p><strong>${escapeHtml(card.value)}</strong><span>${escapeHtml(card.note)}</span></article>`).join("");
 }

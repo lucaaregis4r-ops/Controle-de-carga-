@@ -32,6 +32,25 @@
     return rounded((value - meanValue) / stdDev);
   };
 
+  function calculateHooperIndex(entry) {
+    if (!entry) return null;
+    const scores = [entry.fatigueScore, entry.stressScore, entry.muscleScore, entry.sleepScore];
+    if (scores.some(s => !Number.isFinite(s))) return null;
+    return scores.reduce((a, b) => a + b, 0);
+  }
+
+  function calculateTrainingMonotony(entries, metricKey, days = 7) {
+    if (!entries || entries.length === 0) return null;
+    const recentValues = entries.slice(0, days).map(e => e[metricKey]).filter(Number.isFinite);
+    if (recentValues.length < 2) return null;
+
+    const avg = mean(recentValues);
+    const std = standardDeviation(recentValues);
+    if (!std || std === 0) return null;
+
+    return rounded(avg / std);
+  }
+
   function calculateACWR(entries, metricKey) {
     if (!entries || entries.length < 28) return null; // Precisamos de pelo menos 4 semanas (28 dias de check-ins potenciais)
     // Para simplificar: aguda = últimos 7 check-ins (assumindo 1 por dia), cronica = últimos 28
@@ -197,5 +216,5 @@
       a.athlete.name.localeCompare(b.athlete.name, "pt-BR"));
   }
 
-  return { ANALYSIS_CONFIG, computeRecoveryScore, getAnalysisEligibleAthletes, recentEntries, personalBaseline, buildAttentionItems, standardDeviation, computeZScore, calculateACWR, calculateEWMA, calculateACWR_EWMA };
+  return { ANALYSIS_CONFIG, computeRecoveryScore, getAnalysisEligibleAthletes, recentEntries, personalBaseline, buildAttentionItems, standardDeviation, computeZScore, calculateACWR, calculateEWMA, calculateACWR_EWMA, calculateHooperIndex, calculateTrainingMonotony };
 });
