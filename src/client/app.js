@@ -1788,11 +1788,16 @@ function renderDistributionReport(values, metricKey, scopeLabel) {
 function renderHighlightsForAthlete(athlete) {
   const baseline = buildAthleteLoadBaseline(athlete);
   const eligible = OlympicoAnalysis.getAnalysisEligibleAthletes([athlete], state.updatedAt).length > 0;
+
+  const rawBaseline = OlympicoAnalysis.personalBaseline(athlete, "loadScore");
+  const acwrValue = OlympicoAnalysis.calculateACWR_EWMA(athlete.entries, "loadScore");
+  const acwrLabel = acwrValue !== null ? String(acwrValue) : "Sem base suficiente";
+
   const cards = [
     { label: "Desgaste percebido", value: eligible ? formatRatio(baseline.currentMovingAverage) : "Sem dado atual", note: "Média das 3 últimas respostas" },
-    { label: "Recuperação", value: eligible ? formatRatio(athlete.latest.recoveryScore) : "Sem dado atual", note: "Último check-in" },
-    { label: "Último check-in", value: athlete.lastCheckIn || "Sem data", note: eligible ? "Elegível para leitura atual" : "Histórico disponível; fora da comparação atual" },
-    { label: "Padrão pessoal", value: eligible && baseline.ownPercentile !== null ? baseline.ownBand : "Base histórica insuficiente", note: `${baseline.baselineCount} janelas anteriores` },
+    { label: "ACWR (Exponencial)", value: acwrLabel, note: "Razão de carga aguda-crônica" },
+    { label: "Z-Score Desgaste", value: rawBaseline.zScore !== null ? rawBaseline.zScore : "N/A", note: "Desvios do próprio histórico" },
+    { label: "Último check-in", value: athlete.lastCheckIn || "Sem data", note: eligible ? "Elegível para leitura atual" : "Histórico disponível" },
   ];
   elements.detailHighlights.innerHTML = cards.map((card) => `<article class="highlight"><p>${escapeHtml(card.label)}</p><strong>${escapeHtml(card.value)}</strong><span>${escapeHtml(card.note)}</span></article>`).join("");
 }
@@ -2687,9 +2692,11 @@ function renderAthletes() {
     card.querySelector(".card__category").textContent = `${athlete.category}${activityLabel}`;
     card.querySelector(".card__name").textContent = athlete.name;
     card.querySelector(".card__team-percentile").textContent = Number.isFinite(summary.teamPercentile) ? `Contexto da equipe: ${formatPercentile(summary.teamPercentile)}` : "Contexto da equipe: amostra reduzida";
+    const acwrText = OlympicoAnalysis.calculateACWR_EWMA(athlete.entries, "loadScore");
+
     card.querySelector(".card__checkin").textContent = athlete.lastCheckIn || "Sem data";
     card.querySelector(".card__entries").textContent = `${athlete.totalEntries} respostas`;
-    card.querySelector(".card__summary").textContent = summary.text;
+    card.querySelector(".card__summary").textContent = acwrText !== null ? `${summary.text} · ACWR Exp: ${acwrText}` : summary.text;
     card.querySelector(".card__load").textContent = formatRatio(athlete.latest.loadScore);
     card.querySelector(".card__recovery").textContent = formatRatio(athlete.latest.recoveryScore);
     card.querySelector(".card__pain").textContent = formatRatio(athlete.latest.painLevel, 10);

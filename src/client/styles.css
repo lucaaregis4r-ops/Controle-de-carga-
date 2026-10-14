@@ -29,9 +29,8 @@ body {
   font-family: "IBM Plex Sans", sans-serif;
   color: var(--text);
   background:
-    radial-gradient(circle at top left, rgba(66, 70, 166, 0.35), transparent 26%),
-    radial-gradient(circle at bottom right, rgba(243, 55, 74, 0.18), transparent 24%),
-    linear-gradient(135deg, #0d1232 0%, #161d49 42%, #0f1637 100%);
+    radial-gradient(circle at top left, rgba(30, 41, 59, 0.35), transparent 26%),
+    linear-gradient(135deg, #111827 0%, #1e293b 42%, #0f172a 100%);
 }
 
 button,
@@ -1177,7 +1176,7 @@ canvas {
 }
 
 .physio-stat--red::before {
-  background: #ff5b6b;
+  background: #f87171;
 }
 
 .physio-stat--yellow::before {
@@ -1266,7 +1265,7 @@ canvas {
 }
 
 .physio-card--red::before {
-  background: #ff5b6b;
+  background: #f87171;
 }
 
 .physio-card--yellow::before {
@@ -1473,7 +1472,7 @@ canvas {
 }
 
 .staff-item__bar-fill--high {
-  background: linear-gradient(90deg, #ff5b6b, #ff885a);
+  background: linear-gradient(90deg, #f87171, #fb923c);
 }
 
 .staff-item__bar-fill--medium {

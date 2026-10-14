@@ -46,6 +46,32 @@
     if (chronicLoad === 0) return null;
     return rounded(acuteLoad / chronicLoad);
   }
+
+  const calculateEWMA = (values, alpha) => {
+    if (!values || values.length === 0) return null;
+    let ewma = values[0];
+    for (let i = 1; i < values.length; i++) {
+      ewma = alpha * values[i] + (1 - alpha) * ewma;
+    }
+    return ewma;
+  };
+
+  function calculateACWR_EWMA(entries, metricKey) {
+    if (!entries || entries.length < 28) return null;
+
+    // As entries estao ordenadas com o checkin mais recente no index 0.
+    // Para EWMA computar corretamente temporalmente, invertemos o array temporariamente:
+    const chronologicalValues = entries.slice(0, 28).map(e => e[metricKey]).filter(Number.isFinite).reverse();
+
+    if (chronologicalValues.length === 0) return null;
+
+    // Alphas padrão na literatura: Agudo (7 dias) ~2/(7+1)=0.25; Cronico (28 dias) ~2/(28+1)=0.069
+    const acuteEWMA = calculateEWMA(chronologicalValues, 0.25);
+    const chronicEWMA = calculateEWMA(chronologicalValues, 0.069);
+
+    if (!chronicEWMA) return null;
+    return rounded(acuteEWMA / chronicEWMA);
+  }
   const withinDays = (entry, updatedAtIso, days) => {
     const date = Date.parse(entry?.timestampIso || "");
     const anchor = Date.parse(updatedAtIso || "");
@@ -138,7 +164,11 @@
       if (stressBaseline.zScore !== null && stressBaseline.zScore >= 1.5) add("stress", "Estresse subiu rápido (Z-Score >= 1.5)", 2);
       else if (stressBaseline.percentile >= 85 && stressBaseline.current >= 3) add("stress", "Estresse acima do padrão pessoal", 1);
 
-      if (acwr !== null && acwr > 1.5) add("load", `Razão Aguda:Crônica (ACWR) em zona de risco (${acwr})`, 3, acwr);
+      const acwrEWMA = calculateACWR_EWMA(athlete.entries, "loadScore");
+
+      if (acwrEWMA !== null && acwrEWMA > 1.5) add("load", `Razão ACWR Exponencial em zona de risco (${acwrEWMA})`, 3, acwrEWMA);
+      else if (acwrEWMA !== null && acwrEWMA < 0.8) add("load", `Razão ACWR Exponencial em zona de destreinamento (${acwrEWMA})`, 1, acwrEWMA);
+      else if (acwr !== null && acwr > 1.5) add("load", `Razão Aguda:Crônica (ACWR) em zona de risco (${acwr})`, 3, acwr);
       else if (acwr !== null && acwr < 0.8) add("load", `Razão Aguda:Crônica (ACWR) em zona de destreinamento (${acwr})`, 1, acwr);
 
       if (!signals.length) return null;
@@ -167,5 +197,5 @@
       a.athlete.name.localeCompare(b.athlete.name, "pt-BR"));
   }
 
-  return { ANALYSIS_CONFIG, computeRecoveryScore, getAnalysisEligibleAthletes, recentEntries, personalBaseline, buildAttentionItems, standardDeviation, computeZScore, calculateACWR };
+  return { ANALYSIS_CONFIG, computeRecoveryScore, getAnalysisEligibleAthletes, recentEntries, personalBaseline, buildAttentionItems, standardDeviation, computeZScore, calculateACWR, calculateEWMA, calculateACWR_EWMA };
 });
