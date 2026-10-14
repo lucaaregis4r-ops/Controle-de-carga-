@@ -155,42 +155,111 @@ Quando as variáveis são combinadas, o poder preditivo se intensifica de forma 
 
 ---
 
-### 4. Análise Longitudinal Defasada ($t-1$): O Sistema de Alerta Precoce
+### 4. Análise Longitudinal e Temporal: A Dinâmica da Lesão ($t-1$ e $t=0$)
 
-Um dos pontos mais críticos para a comissão técnica é determinar se o questionário apenas *registra* o problema após a dor ocorrer ou se ele é capaz de *antecipar* o evento lesivo.
+A análise transversal tradicional apenas compara grupos gerais, mas o que ocorre biologicamente e mecanicamente na trajetória de cada atleta? Para responder a essa questão crucial, cruzamos os prontuários da Fisioterapia com as séries temporais dos 2.334 check-ins, isolando **55 episódios agudos de eclosão de lesão ou dor severa** ($\text{Dor} < 4 \rightarrow \ge 6$ ou entrada imediata no departamento médico) e comparamos três momentos cronológicos: o **Baseline Pessoal Histórico**, a **Sessão Imediatamente Anterior ($t-1$)** e o **Momento Exato da Lesão ($t=0$)**.
 
-Para testar essa hipótese de causalidade temporal, isolamos **53 episódios de início de crise de dor aguda** (momentos em que a dor saltou de valores assintomáticos $\text{Dor} < 4$ para dor severa $\text{Dor} \ge 6$) e comparamos com **1.189 transições normais/estáveis** ($\text{Dor} < 4 \rightarrow < 4$). Analisamos o que estava acontecendo no check-in imediatamente anterior ($t-1$, tipicamente 24h a 48h antes da lesão):
+---
 
-| Variável Avaliada na Sessão Anterior ($t-1$) | Check-in Anterior a um Pico de Dor ($n = 53$) | Check-in em Período Estável ($n = 1.189$) | Salto Precoce ($\Delta\%$) |
+#### 4.1 A Fisiologia e a Carga no Momento Exato da Lesão ($t=0$)
+
+A tabela abaixo documenta o comportamento das variáveis no momento em que a lesão se manifesta clinicamente:
+
+| Variável Monitorada | Baseline Pessoal Histórico | Sessão Anterior ($t-1$) | Momento da Lesão ($t=0$) | Variação no $t=0$ ($\Delta$ vs Baseline) | Variação no $t=0$ ($\Delta$ vs $t-1$) |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Dor Percebida (EVA, 0 a 10)** | $0.95 \pm 1.02$ | $1.07 \pm 1.30$ | **$6.64 \pm 0.85$** | **$+599\%$** | **$+520\%$** |
+| **Desgaste da Sessão (Load Score, 1 a 5)** | $2.49 \pm 0.47$ | $2.38 \pm 0.64$ | **$3.25 \pm 0.56$** | **$+30.5\%$** | **$+36.5\%$** |
+| **Z-Score da Carga Intra-individual** | $0.00\sigma$ | $-0.18\sigma$ | **$+1.89\sigma \pm 1.91$** | **$+1.89\sigma$** | **$+2.07\sigma$** |
+| **Índice Hooper Total (4 a 20)** | $11.14 \pm 2.03$ | $10.98 \pm 2.86$ | **$13.18 \pm 2.96$** | **$+18.3\%$** | **$+20.0\%$** |
+| **Dor Muscular Tardia (DOMS, 1 a 5)** | $2.96 \pm 0.60$ | $2.67 \pm 0.90$ | **$3.67 \pm 1.02$** | **$+24.0\%$** | **$+37.5\%$** |
+| **Fadiga Percebida (1 a 5)** | $3.07 \pm 0.53$ | $3.04 \pm 0.84$ | **$3.53 \pm 0.88$** | **$+15.0\%$** | **$+16.1\%$** |
+| **Estresse Psicossocial (1 a 5)** | $2.87 \pm 0.76$ | $2.98 \pm 1.06$ | **$3.40 \pm 1.16$** | **$+18.5\%$** | **$+14.1\%$** |
+| **Qualidade do Sono (1 a 5)** | $2.23 \pm 0.56$ | $2.29 \pm 0.88$ | **$2.58 \pm 1.08$** | **$+15.7\%$** | **$+12.7\%$** |
+| **Razão ACWR EWMA** | $1.00 \pm 0.04$ | $1.00 \pm 0.04$ | **$1.00 \pm 0.04$** | $0.0\%$ | $0.0\%$ |
+
+```mermaid
+xychart-beta
+    title "Salto Médio dos Indicadores no Momento da Lesão (t=0 vs t-1)"
+    x-axis ["Carga Geral", "DOMS Muscular", "Hooper Total", "Fadiga", "Estresse", "Sono Ruim"]
+    y-axis "Aumento Percentual (%)" 0 --> 40
+    bar [36.5, 37.5, 20.0, 16.1, 14.1, 12.7]
+```
+
+##### Principais Achados no Momento do Impacto ($t=0$):
+1. **O Salto de Carga Subjetiva ($+36.5\%$):** A intensidade e o volume da sessão relatados saltam de $2.38$ para $3.25/5$.
+2. **A Explosão do Z-Score da Carga ($+1.89\sigma$):** A carga da sessão no dia da lesão situa-se em média quase **dois desvios-padrão acima da média histórica habitual do próprio atleta**. Em atletas individuais, o Z-score superou $+2.5\sigma$ a $+3.0\sigma$.
+3. **Eclosão Aguda da Dor Muscular Tardia (DOMS: $3.67/5$, $+37.5\%$):** No dia do evento, as notas de dor muscular concentram-se fortemente nos níveis 4 e 5, evidenciando falha de recuperação excêntrica ou microrrupturas teciduais prévias que culminaram na lesão sintomática.
+4. **Descompasso Psicofisiológico do Hooper ($13.18 \pm 2.96$):** O Índice Hooper salta de uma média normal ($10.98$) diretamente para a faixa amarela/vermelha de estresse sistêmico.
+
+---
+
+#### 4.2 O Fenômeno Metodológico: Por que o Z-Score Supera o ACWR em Cronogramas Intermitentes?
+
+Um dado altamente revelador é que a **Razão ACWR EWMA** permaneceu em torno de $1.00$ nos episódios agudos, enquanto o **Z-Score da Carga** disparou para $+1.89\sigma$. A explicação reside na física matemática do modelo EWMA e na realidade da rotina de categorias de base:
+- O EWMA calcula a média ponderada com decaimento exponencial ($\lambda = 0.25$ para 7 dias). Em modalidades de clube onde os atletas treinam em dias alternados (ex.: segundas, quartas e sextas), um treino único de alta intensidade (ex.: carga $4.5$) inserido entre dias de descanso eleva a carga aguda de forma amortecida ($0.25 \times 4.5 = 1.12$), não sendo suficiente para deslocar a razão aguda:crônica para além de $1.50$ em um único dia.
+- O **Z-Score intra-atleta**, por sua vez, avalia o impacto **ponto a ponto**: compara o treino de hoje exclusivamente contra a distribuição habitual daquele atleta.
+- **Conclusão para os Treinadores e Fisiologistas:** Em cronogramas intermitentes de base, **o Z-Score da Carga da sessão é o sensor de alarme imediato mais sensível**, enquanto o ACWR é ideal para monitorar acúmulo de carga em semanas densas (como torneios com múltiplos jogos seguidos).
+
+---
+
+#### 4.3 A Sessão Anterior ($t-1$): O Sistema de Alerta Precoce (24h a 48h antes)
+
+Quando retrocedemos à sessão anterior à eclosão da dor severa ($t-1$), verificamos o funcionamento do alerta antecipado:
+
+| Variável Avaliada na Sessão Anterior ($t-1$) | Check-in Anterior a um Pico de Dor ($n = 55$) | Check-in em Período Estável ($n = 1.189$) | Salto Precoce ($\Delta\%$) |
 | :--- | :---: | :---: | :---: |
-| **Fadiga Percebida ($t-1$)** | **$3.06$** | **$2.56$** | **$+19.5\%$** |
-| **Estresse Psicossocial ($t-1$)** | **$3.00$** | **$2.52$** | **$+19.0\%$** |
-| **Desgaste Geral (Load) ($t-1$)** | **$2.39$** | **$2.07$** | **$+15.5\%$** |
-| **Índice Hooper Total ($t-1$)** | **$11.04$** | **$9.64$** | **$+14.5\%$** |
-| **Dor Muscular / DOMS ($t-1$)** | **$2.68$** | **$2.44$** | **$+9.8\%$** |
-| **Qualidade do Sono ($t-1$)** | **$2.30$** | **$2.12$** | **$+8.5\%$** |
+| **Fadiga Percebida ($t-1$)** | **$3.04$** | **$2.56$** | **$+18.8\%$** |
+| **Estresse Psicossocial ($t-1$)** | **$2.98$** | **$2.52$** | **$+18.3\%$** |
+| **Desgaste Geral (Load) ($t-1$)** | **$2.38$** | **$2.07$** | **$+15.0\%$** |
+| **Índice Hooper Total ($t-1$)** | **$10.98$** | **$9.64$** | **$+13.9\%$** |
+| **Dor Muscular / DOMS ($t-1$)** | **$2.67$** | **$2.44$** | **$+9.4\%$** |
+| **Qualidade do Sono ($t-1$)** | **$2.29$** | **$2.12$** | **$+8.0\%$** |
+| **Dor Percebida ($t-1$)** | **$1.07$** | **$0.78$** | **Dor ainda imperceptível / baixa** |
 
 ```mermaid
 flowchart LR
     subgraph FasePrevia["Sessão Anterior (t-1: 24h-48h antes)"]
         direction TB
-        F["Fadiga: 3.06 (+19.5%)"]
-        S["Estresse: 3.00 (+19.0%)"]
-        H["Hooper: 11.04 (+14.5%)"]
-        D["Dor: < 4.0 (Ainda Baixa!)"]
+        F["Fadiga: 3.04 (+18.8%)"]
+        S["Estresse: 2.98 (+18.3%)"]
+        H["Hooper: 10.98 (+13.9%)"]
+        D["Dor: 1.07 (Ainda Assintomático!)"]
     end
 
-    subgraph EventoCritico["Sessão do Evento (t)"]
+    subgraph MomentoLesao["Sessão do Evento (t=0)"]
         direction TB
-        P["Eclosão de Dor Severa (EVA >= 6/10)"]
-        L["Afastamento / Entrada na Fisioterapia"]
+        Z["Z-Score Carga: +1.89σ (+36.5%)"]
+        DOMS["DOMS: 3.67 (+37.5%)"]
+        Hooper0["Hooper: 13.18 (Alerta Vermelho)"]
+        Dor0["Dor EVA: 6.64 (Crise Aguda)"]
     end
 
-    FasePrevia -->|"Sobrecarga Mecânica + Fadiga Central"| EventoCritico
+    FasePrevia -->|"Sobrecarga Mecânica + Falha de Reparo"| MomentoLesao
 ```
 
 > [!NOTE]
-> **Descoberta Central:** Na sessão $t-1$, o atleta ainda **não se queixava de dor alta**, porém a **Fadiga** e o **Estresse** já haviam saltado $+19.5\%$ e $+19.0\%$. Isso prova que a fadiga fisiológica e a sobrecarga psicossocial precedem e preparam o terreno biológico para a lesão mecânica.
+> **A Janela de Oportunidade:** Em $t-1$, a dor do atleta é desprezível ($1.07/10$), mas o sistema psicobiológico já sinaliza estresse e fadiga elevados ($+18.8\%$). Em $t=0$, a carga mecânica salta em $+1.89\sigma$, rompendo a capacidade adaptativa do tecido biológico.
+
+---
+
+#### 4.4 Casos Clínicos Reais Mapeados no $t=0$
+
+A rastreabilidade dos prontuários clínicos da Fisioterapia contra as respostas do formulário revela casos paradigmáticos:
+
+1. **Fernanda Oliveira Tavares (Voleibol Feminino Sub-19 — Diagnóstico: Calo Ósseo em Tíbia D):**
+   - **Histórico:** Carga habitual em torno de $2.4$.
+   - **Momento da Crise (28/08):** Dor saltou repentinamente de $0$ para **$6/10$**. A carga subjetiva da sessão atingiu **$4.33$** (Z-Score individual de **$+2.24\sigma$**). O Índice Hooper explodiu para **$19/20$** (Fadiga 5, Sono 4, DOMS 5, Estresse 5).
+   - **Segunda Crise (09/10):** Novo pico com dor $7/10$, carga $4.42$ e Hooper novamente em $19/20$. Demonstração clara de sobrecarga óssea repetitiva frente a picos agudos de impacto sem tempo biológico de consolidação.
+
+2. **Anderson Fernandes Junior (Futsal Masculino Sub-17 — Diagnóstico: Lesão Muscular / Sobrecarga):**
+   - **Progressão em Rampa:** A carga subiu consecutivamente de $1.58 \rightarrow 3.17 \rightarrow 4.50$.
+   - **Momento da Lesão ($t=0$):** No exato dia em que a carga atingiu seu ápice histórico (**$4.50$**), a dor saltou imediatamente para **$6/10$**, forçando encaminhamento para a fisioterapia.
+
+3. **Anna Clara Gomes Pereira (Natação Juvenil — Diagnóstico: Entorse de Tornozelo Tardia):**
+   - **Momento do Evento (13/08):** A carga da sessão subiu de $1.83$ para **$3.50$** (Z-Score individual de **$+1.67\sigma$**). A dor saltou de $0$ para **$8/10$**, o Hooper subiu de $9$ para **$14/20$** e a Dor Muscular Tardia (DOMS) atingiu a nota máxima **$5/5$**.
+
+4. **Maria Paula Costa Dias Moreira (Voleibol Feminino Sub-17 — Diagnóstico: Tendinopatia de Supraespinhal Ombro D):**
+   - **Picos Clínicos (30/09 e 07/10):** Dor em **$6/10$**, carga saltando para **$4.17$**, e Hooper em **$17/20$** (Sono 5, DOMS 4, Estresse 4, Fadiga 4), sinalizando exaustão do manguito rotador em semanas de alto volume de ataques e saques.
 
 ---
 
